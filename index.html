@@ -1,0 +1,47 @@
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function() {
+        const target = document.querySelector('#target');
+        const vid = document.querySelector('#vid');
+
+        // Spela videon när kameran ser bilden
+        target.addEventListener("targetFound", () => {
+          vid.play();
+        });
+        // Pausa när du drar bort kameran
+        target.addEventListener("targetLost", () => {
+          vid.pause();
+        });
+        
+        // Mobiler kräver att man trycker på skärmen en gång för att tillåta ljud
+        window.addEventListener('click', () => {
+          vid.muted = false;
+          vid.play();
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <!-- Starta AR-kameran och ladda in din target.mind -->
+    <a-scene mindar-image="imageTargetSrc: target.mind;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+      
+      <a-assets>
+        <!-- Ladda in videon, mutad i början pga mobilers regler -->
+        <video id="vid" src="video.mp4" loop muted playsinline></video>
+      </a-assets>
+
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <!-- Koppla videon till bilden -->
+      <a-entity id="target" mindar-image-target="targetIndex: 0">
+        <!-- Bredd och höjd är satt till 1 för en kvadratisk bild. Om din video/bild är liggande (16:9), ändra height till "0.56" -->
+        <a-video src="#vid" position="0 0 0" height="1" width="1"></a-video>
+      </a-entity>
+
+    </a-scene>
+  </body>
+</html>
