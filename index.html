@@ -5,41 +5,47 @@
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
     <script>
       document.addEventListener("DOMContentLoaded", function() {
-        const target = document.querySelector('#target');
-        const vid = document.querySelector('#vid');
+        // Hämta båda bilderna och båda videorna
+        const target1 = document.querySelector('#target1');
+        const target2 = document.querySelector('#target2');
+        const vid1 = document.querySelector('#vid1');
+        const vid2 = document.querySelector('#vid2');
 
-        // Spela videon när kameran ser bilden
-        target.addEventListener("targetFound", () => {
-          vid.play();
-        });
-        // Pausa när du drar bort kameran
-        target.addEventListener("targetLost", () => {
-          vid.pause();
-        });
+        // Logik för Bild 1
+        target1.addEventListener("targetFound", () => vid1.play());
+        target1.addEventListener("targetLost", () => vid1.pause());
+
+        // Logik för Bild 2
+        target2.addEventListener("targetFound", () => vid2.play());
+        target2.addEventListener("targetLost", () => vid2.pause());
         
-        // Mobiler kräver att man trycker på skärmen en gång för att tillåta ljud
+        // Tillåt ljud för alla videor vid första klicket
         window.addEventListener('click', () => {
-          vid.muted = false;
-          vid.play();
+          vid1.muted = false;
+          vid2.muted = false;
         });
       });
     </script>
   </head>
   <body>
-    <!-- Starta AR-kameran och ladda in din target.mind -->
     <a-scene mindar-image="imageTargetSrc: target.mind;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       
       <a-assets>
-        <!-- Ladda in videon, mutad i början pga mobilers regler -->
-        <video id="vid" src="video.mp4" loop muted playsinline></video>
+        <!-- Här lägger du in båda dina videofiler. Se till att namnen stämmer exakt. -->
+        <video id="vid1" src="video1.mp4" loop muted playsinline></video>
+        <video id="vid2" src="video2.mp4" loop muted playsinline></video>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <!-- Koppla videon till bilden -->
-      <a-entity id="target" mindar-image-target="targetIndex: 0">
-        <!-- Bredd och höjd är satt till 1 för en kvadratisk bild. Om din video/bild är liggande (16:9), ändra height till "0.56" -->
-        <a-video src="#vid" position="0 0 0" height="1" width="1"></a-video>
+      <!-- Koppla Video 1 till Bild 1 (targetIndex: 0) -->
+      <a-entity id="target1" mindar-image-target="targetIndex: 0">
+        <a-video src="#vid1" position="0 0 0" height="1" width="1"></a-video>
+      </a-entity>
+
+      <!-- Koppla Video 2 till Bild 2 (targetIndex: 1) -->
+      <a-entity id="target2" mindar-image-target="targetIndex: 1">
+        <a-video src="#vid2" position="0 0 0" height="1" width="1"></a-video>
       </a-entity>
 
     </a-scene>
