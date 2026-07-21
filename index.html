@@ -55,7 +55,7 @@
           clearInterval(item.fadeInterval);
 
           if (item.vid.paused) {
-            item.vid.currentTime = 0; // Spola alltid tillbaka till exakt den första bildrutan
+            item.vid.currentTime = 0; // Spola alltid tillbaka till början
             item.vid.volume = 0; // Börja helt tyst
             item.vid.play();
 
@@ -77,7 +77,7 @@
           }
         };
 
-        // Pausa vid target lost (med 500ms mikro-dropp fördröjning för att förhindra flimmer)
+        // Pausa vid target lost (med 500ms fördröjning för att förhindra flimmer)
         const pauseVideo = (item) => {
           clearInterval(item.fadeInterval);
           item.timeout = setTimeout(() => {
@@ -108,26 +108,19 @@
       <p>Startar kameran...</p>
     </div>
 
-    <!-- filterMinCF och filterBeta är trimmade för att stabilisera bilden max -->
-    <a-scene mindar-image="imageTargetSrc: target.mind; filterMinCF: 0.0001; filterBeta: 0.001; uiLoading: no; uiScanning: no;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+    <!-- Filter är justerade för snabbare identifiering utan att frysa telefonen -->
+    <a-scene mindar-image="imageTargetSrc: target.mind; filterMinCF: 0.001; filterBeta: 0.01; uiLoading: no; uiScanning: no;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       
       <a-assets>
-        <!-- preload="auto" tvingar ner videon i minnet direkt för blixtsnabb start -->
-        <video id="vid1" src="video1.mp4" preload="auto" loop muted playsinline></video>
-        <video id="vid2" src="video2.mp4" preload="auto" loop muted playsinline></video>
+        <!-- preload="metadata" skonar processorn så kameran startar mycket snabbare -->
+        <video id="vid1" src="video1.mp4" preload="metadata" loop muted playsinline></video>
+        <video id="vid2" src="video2.mp4" preload="metadata" loop muted playsinline></video>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <!-- 
-        PROPORTIONER FÖR HI-PRINT 2x3 (54x86 mm):
-        Om bilden är LIGGANDE: width="1" height="0.628" (Aktiverad nu)
-        Om bilden är STÅENDE:  width="1" height="1.593"
-      -->
-
       <!-- Bild 1 -->
       <a-entity id="target1" mindar-image-target="targetIndex: 0">
-        <!-- scale="1.02" skapar den osynliga marginalen så kanten täcks helt -->
         <a-video id="a-vid1" src="#vid1" position="0 0 0" width="1" height="0.628" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
       </a-entity>
 
