@@ -1,83 +1,136 @@
+<!DOCTYPE html>
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+    
+    <style>
+      /* Stilren, minimalistisk laddningsskärm */
+      #loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #050505;
+        color: #ffffff;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        z-index: 9999;
+        transition: opacity 0.8s ease;
+      }
+      #loading-overlay p {
+        font-size: 13px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: #aaaaaa;
+      }
+    </style>
+
     <script>
       document.addEventListener("DOMContentLoaded", function() {
-        const target1 = document.querySelector('#target1');
-        const vid1 = document.querySelector('#vid1');
-        const aVid1 = document.querySelector('#a-vid1');
+        const sceneEl = document.querySelector('a-scene');
+        const overlay = document.querySelector('#loading-overlay');
 
-        const target2 = document.querySelector('#target2');
-        const vid2 = document.querySelector('#vid2');
-        const aVid2 = document.querySelector('#a-vid2');
+        // Dölj laddningsskärmen mjukt när AR-scenen är redo
+        sceneEl.addEventListener("renderstart", () => {
+          setTimeout(() => {
+            overlay.style.opacity = '0';
+            setTimeout(() => overlay.style.display = 'none', 800);
+          }, 600);
+        });
 
-        // Variabler för att hålla koll på vår mikro-dropp fördröjning
-        let timeout1;
-        let timeout2;
+        // Struktur för alla targets och videor
+        const targets = [
+          { target: document.querySelector('#target1'), vid: document.querySelector('#vid1'), aVid: document.querySelector('#a-vid1'), timeout: null, fadeInterval: null },
+          { target: document.querySelector('#target2'), vid: document.querySelector('#vid2'), aVid: document.querySelector('#a-vid2'), timeout: null, fadeInterval: null }
+        ];
 
-        // Logik för Bild 1
-        target1.addEventListener("targetFound", () => {
-          clearTimeout(timeout1); // Avbryt pausen om kameran hittar bilden igen snabbt
-          if (vid1.paused) {
-            vid1.currentTime = 0;
-            vid1.play();
-            aVid1.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
+        // Mjuk ljud- och bild-fade-in
+        const playVideo = (item) => {
+          clearTimeout(item.timeout);
+          clearInterval(item.fadeInterval);
+
+          if (item.vid.paused) {
+            item.vid.currentTime = 0;
+            item.vid.volume = 0; // Börja helt tyst
+            item.vid.play();
+
+            // 1. Visuell fade-in (opacitet över 500ms)
+            item.aVid.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
+
+            // 2. Ljud-fade-in (rampa volym från 0 till 1 över 500ms)
+            let vol = 0;
+            const step = 0.05; 
+            item.fadeInterval = setInterval(() => {
+              vol += step;
+              if (vol >= 1) {
+                item.vid.volume = 1;
+                clearInterval(item.fadeInterval);
+              } else {
+                item.vid.volume = vol;
+              }
+            }, 25);
           }
-        });
-        target1.addEventListener("targetLost", () => {
-          timeout1 = setTimeout(() => { // Vänta 500ms innan videon faktiskt försvinner
-            vid1.pause();
-            aVid1.removeAttribute('animation');
-            aVid1.setAttribute('material', 'opacity: 0');
+        };
+
+        // Pausa vid target lost (med 500ms mikro-dropp fördröjning)
+        const pauseVideo = (item) => {
+          clearInterval(item.fadeInterval);
+          item.timeout = setTimeout(() => {
+            item.vid.pause();
+            item.vid.volume = 0;
+            item.aVid.removeAttribute('animation');
+            item.aVid.setAttribute('material', 'opacity: 0');
           }, 500);
+        };
+
+        targets.forEach(item => {
+          item.target.addEventListener("targetFound", () => playVideo(item));
+          item.target.addEventListener("targetLost", () => pauseVideo(item));
         });
 
-        // Logik för Bild 2
-        target2.addEventListener("targetFound", () => {
-          clearTimeout(timeout2);
-          if (vid2.paused) {
-            vid2.currentTime = 0;
-            vid2.play();
-            aVid2.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
-          }
-        });
-        target2.addEventListener("targetLost", () => {
-          timeout2 = setTimeout(() => {
-            vid2.pause();
-            aVid2.removeAttribute('animation');
-            aVid2.setAttribute('material', 'opacity: 0');
-          }, 500);
-        });
-        
-        // Tillåt ljud vid första klicket
+        // Slå på ljudet i bakgrunden vid första klicket på skärmen
         window.addEventListener('click', () => {
-          vid1.muted = false;
-          vid2.muted = false;
-        });
+          targets.forEach(item => {
+            item.vid.muted = false;
+          });
+        }, { once: true });
       });
     </script>
   </head>
   <body>
-    <!-- uiLoading="no" och uiScanning="no" ger en helt ren kamera utan störande grafik -->
+    <!-- Laddningsskärm -->
+    <div id="loading-overlay">
+      <p>Startar kameran...</p>
+    </div>
+
     <a-scene mindar-image="imageTargetSrc: target.mind; filterMinCF: 0.0001; filterBeta: 0.001; uiLoading: no; uiScanning: no;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       
       <a-assets>
-        <!-- preload="auto" tvingar ner videon i minnet direkt för blixtsnabb start -->
         <video id="vid1" src="video1.mp4" preload="auto" loop muted playsinline></video>
         <video id="vid2" src="video2.mp4" preload="auto" loop muted playsinline></video>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <a-entity id="target1" mindar-image-target="targetIndex: 1">
-        <!-- scale="1.02 1.02 1.02" skapar den osynliga marginalen -->
-        <a-video id="a-vid1" src="#vid1" position="0 0 0" height="1" width="1" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
+      <!-- 
+        PROPORTIONER (ASPECT RATIO):
+        - För 16:9 video (Standard): width="1" height="0.5625"
+        - För 3:2 foto/video:        width="1" height="0.666"
+        - För 4:3 foto/video:        width="1" height="0.75"
+        - För 1:1 kvadrat:           width="1" height="1"
+      -->
+
+      <a-entity id="target1" mindar-image-target="targetIndex: 0">
+        <a-video id="a-vid1" src="#vid1" position="0 0 0" width="1" height="0.5625" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
       </a-entity>
 
-      <a-entity id="target2" mindar-image-target="targetIndex: 0">
-        <a-video id="a-vid2" src="#vid2" position="0 0 0" height="1" width="1" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
+      <a-entity id="target2" mindar-image-target="targetIndex: 1">
+        <a-video id="a-vid2" src="#vid2" position="0 0 0" width="1" height="0.5625" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
       </a-entity>
 
     </a-scene>
