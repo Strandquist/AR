@@ -42,41 +42,53 @@
         });
 
         // Struktur för alla targets. 
-        // Target 3 har nu en "extraVid" istället för en statisk bild.
+        // Target 3 har nu en Container som håller både den mörka bakgrunden och textvideon!
         const targets = [
-          { target: document.querySelector('#target1'), vid: document.querySelector('#vid1'), aVid: document.querySelector('#a-vid1'), extraVid: null, aExtra: null, timeout: null, fadeInterval: null },
-          { target: document.querySelector('#target2'), vid: document.querySelector('#vid2'), aVid: document.querySelector('#a-vid2'), extraVid: null, aExtra: null, timeout: null, fadeInterval: null },
-          { target: document.querySelector('#target3'), vid: document.querySelector('#vid3'), aVid: document.querySelector('#a-vid3'), extraVid: document.querySelector('#vid-fakta1'), aExtra: document.querySelector('#a-fakta1'), timeout: null, fadeInterval: null }
+          { target: document.querySelector('#target1'), vid: document.querySelector('#vid1'), aVid: document.querySelector('#a-vid1') },
+          { target: document.querySelector('#target2'), vid: document.querySelector('#vid2'), aVid: document.querySelector('#a-vid2') },
+          { 
+            target: document.querySelector('#target3'), 
+            vid: document.querySelector('#vid3'), 
+            aVid: document.querySelector('#a-vid3'),
+            faktaContainer: document.querySelector('#fakta-container'),
+            faktaBg: document.querySelector('#fakta-bg'),
+            faktaVidEl: document.querySelector('#a-fakta1'),
+            faktaVidFile: document.querySelector('#vid-fakta1')
+          }
         ];
 
         const playVideo = (item) => {
-          clearTimeout(item.timeout);
-          clearInterval(item.fadeInterval);
-
           if (item.vid.paused) {
-            // Spela huvudvideon
+            // Spela upp safarivideon
             item.vid.currentTime = 0; 
             item.vid.volume = 0; 
             item.vid.play();
             item.aVid.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
             
-            // Spela faktaruta-videon (om den finns på detta target)
-            if (item.extraVid) {
-              item.extraVid.currentTime = 0;
-              item.extraVid.play();
-              item.aExtra.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
+            // ANIMERA FAKTARUTAN OCH TEXTVIDEON
+            if (item.faktaContainer) {
+              item.faktaVidFile.currentTime = 0;
+              item.faktaVidFile.play(); // Starta din textanimation
+
+              // Tona in den mörka bakgrunden till 60% (0.6)
+              item.faktaBg.setAttribute('animation__fade', 'property: material.opacity; from: 0; to: 0.6; dur: 800; easing: easeOutQuad');
+              // Tona in textvideon till 100% (1.0)
+              item.faktaVidEl.setAttribute('animation__fade', 'property: material.opacity; from: 0; to: 1; dur: 800; easing: easeOutQuad');
+              
+              // Glid ut hela rutan från bakom huvudvideon till höger
+              item.faktaContainer.setAttribute('animation__slide', 'property: position; from: 0 0 -0.01; to: 0.75 0 -0.01; dur: 800; easing: easeOutQuint');
             }
 
             // Tona in ljudet för huvudvideon
-            let vol = 0;
+            item.vol = 0;
             const step = 0.05; 
             item.fadeInterval = setInterval(() => {
-              vol += step;
-              if (vol >= 1) {
+              item.vol += step;
+              if (item.vol >= 1) {
                 item.vid.volume = 1;
                 clearInterval(item.fadeInterval);
               } else {
-                item.vid.volume = vol;
+                item.vid.volume = item.vol;
               }
             }, 25);
           }
@@ -85,17 +97,23 @@
         const pauseVideo = (item) => {
           clearInterval(item.fadeInterval);
           item.timeout = setTimeout(() => {
-            // Pausa huvudvideon
+            // Pausa och göm safarivideon
             item.vid.pause();
             item.vid.volume = 0;
             item.aVid.removeAttribute('animation');
             item.aVid.setAttribute('material', 'opacity: 0');
             
-            // Pausa faktaruta-videon
-            if (item.extraVid) {
-              item.extraVid.pause();
-              item.aExtra.removeAttribute('animation');
-              item.aExtra.setAttribute('material', 'opacity: 0');
+            // Återställ faktarutan och pausa textvideon
+            if (item.faktaContainer) {
+              item.faktaVidFile.pause();
+              
+              item.faktaBg.removeAttribute('animation__fade');
+              item.faktaVidEl.removeAttribute('animation__fade');
+              item.faktaContainer.removeAttribute('animation__slide');
+              
+              item.faktaBg.setAttribute('material', 'opacity: 0');
+              item.faktaVidEl.setAttribute('material', 'opacity: 0');
+              item.faktaContainer.setAttribute('position', '0 0 -0.01'); // Göm tillbaka bakom videon
             }
           }, 500);
         };
@@ -126,7 +144,7 @@
         <video id="vid2" src="video2.mp4" preload="metadata" loop muted playsinline></video>
         <video id="vid3" src="video3.mp4" preload="metadata" loop muted playsinline></video>
         
-        <!-- Din animerade faktaruta som en WebM-video laddas in här -->
+        <!-- Din animerade textvideo (utan svart bakgrund från DaVinci) -->
         <video id="vid-fakta1" src="fakta1.webm" preload="metadata" loop muted playsinline></video>
       </a-assets>
 
@@ -144,11 +162,21 @@
 
       <!-- Bild 3 -->
       <a-entity id="target3" mindar-image-target="targetIndex: 2">
-        <!-- Huvudvideon -->
+        
+        <!-- Huvudvideon ligger längst fram (Z = 0) -->
         <a-video id="a-vid3" src="#vid3" position="0 0 0" width="1" height="0.628" scale="1 1 1" material="opacity: 0; transparent: true"></a-video>
         
-        <!-- Den animerade faktarutan: Koden är nu en <a-video> istället för <a-image> -->
-        <a-video id="a-fakta1" src="#vid-fakta1" position="0.75 0 0" width="0.45" height="0.628" material="opacity: 0; transparent: true"></a-video>
+        <!-- "Behållaren" som håller både bakgrunden och din text. Startar gömd bakom videon (Z = -0.01) -->
+        <a-entity id="fakta-container" position="0 0 -0.01">
+          
+          <!-- Den mörka, halvt genomskinliga glasrutan ritad direkt i koden (slipper DaVinci-buggar) -->
+          <a-plane id="fakta-bg" width="0.45" height="0.628" color="#000000" material="opacity: 0; transparent: true"></a-plane>
+          
+          <!-- Din textvideo som spelas upp ovanpå glasrutan -->
+          <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0.01" material="opacity: 0; transparent: true"></a-video>
+          
+        </a-entity>
+
       </a-entity>
 
     </a-scene>
