@@ -6,7 +6,6 @@
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
     
     <style>
-      /* Stilren, minimalistisk laddningsskärm */
       #loading-overlay {
         position: fixed;
         top: 0;
@@ -35,7 +34,6 @@
         const sceneEl = document.querySelector('a-scene');
         const overlay = document.querySelector('#loading-overlay');
 
-        // Dölj laddningsskärmen mjukt när AR-scenen är redo
         sceneEl.addEventListener("renderstart", () => {
           setTimeout(() => {
             overlay.style.opacity = '0';
@@ -43,26 +41,32 @@
           }, 600);
         });
 
-        // Struktur för alla targets och videor
+        // Struktur för alla targets. 
+        // Faktarutan är kopplad till target 3.
         const targets = [
-          { target: document.querySelector('#target1'), vid: document.querySelector('#vid1'), aVid: document.querySelector('#a-vid1'), timeout: null, fadeInterval: null },
-          { target: document.querySelector('#target2'), vid: document.querySelector('#vid2'), aVid: document.querySelector('#a-vid2'), timeout: null, fadeInterval: null }
+          { target: document.querySelector('#target1'), vid: document.querySelector('#vid1'), aVid: document.querySelector('#a-vid1'), extra: null, timeout: null, fadeInterval: null },
+          { target: document.querySelector('#target2'), vid: document.querySelector('#vid2'), aVid: document.querySelector('#a-vid2'), extra: null, timeout: null, fadeInterval: null },
+          { target: document.querySelector('#target3'), vid: document.querySelector('#vid3'), aVid: document.querySelector('#a-vid3'), extra: document.querySelector('#a-fakta1'), timeout: null, fadeInterval: null }
         ];
 
-        // Mjuk ljud- och bild-fade-in
         const playVideo = (item) => {
           clearTimeout(item.timeout);
           clearInterval(item.fadeInterval);
 
           if (item.vid.paused) {
-            item.vid.currentTime = 0; // Spola alltid tillbaka till början
-            item.vid.volume = 0; // Börja helt tyst
+            item.vid.currentTime = 0; 
+            item.vid.volume = 0; 
             item.vid.play();
 
-            // 1. Visuell fade-in (opacitet över 500ms)
+            // Tona in videon
             item.aVid.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
+            
+            // Tona in faktarutan (om den finns på detta target)
+            if (item.extra) {
+              item.extra.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
+            }
 
-            // 2. Ljud-fade-in (rampa volym från 0 till 1 över 500ms)
+            // Tona in ljudet
             let vol = 0;
             const step = 0.05; 
             item.fadeInterval = setInterval(() => {
@@ -77,14 +81,19 @@
           }
         };
 
-        // Pausa vid target lost (med 500ms fördröjning för att förhindra flimmer)
         const pauseVideo = (item) => {
           clearInterval(item.fadeInterval);
           item.timeout = setTimeout(() => {
             item.vid.pause();
             item.vid.volume = 0;
+            
             item.aVid.removeAttribute('animation');
             item.aVid.setAttribute('material', 'opacity: 0');
+            
+            if (item.extra) {
+              item.extra.removeAttribute('animation');
+              item.extra.setAttribute('material', 'opacity: 0');
+            }
           }, 500);
         };
 
@@ -93,7 +102,7 @@
           item.target.addEventListener("targetLost", () => pauseVideo(item));
         });
 
-        // Slå på ljudet i bakgrunden vid första klicket på skärmen
+        // Starta ljudet vid första klicket
         window.addEventListener('click', () => {
           targets.forEach(item => {
             item.vid.muted = false;
@@ -103,30 +112,37 @@
     </script>
   </head>
   <body>
-    <!-- Laddningsskärm -->
     <div id="loading-overlay">
       <p>Startar kameran...</p>
     </div>
 
-    <!-- Filter är justerade för snabbare identifiering utan att frysa telefonen -->
     <a-scene mindar-image="imageTargetSrc: target.mind; filterMinCF: 0.001; filterBeta: 0.01; uiLoading: no; uiScanning: no;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       
       <a-assets>
-        <!-- preload="metadata" skonar processorn så kameran startar mycket snabbare -->
         <video id="vid1" src="video1.mp4" preload="metadata" loop muted playsinline></video>
         <video id="vid2" src="video2.mp4" preload="metadata" loop muted playsinline></video>
+        <video id="vid3" src="video3.mp4" preload="metadata" loop muted playsinline></video>
+        <!-- Faktarutan som PNG -->
+        <img id="fakta1" src="fakta1.png">
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
       <!-- Bild 1 -->
-      <a-entity id="target1" mindar-image-target="targetIndex: 1">
+      <a-entity id="target1" mindar-image-target="targetIndex: 0">
         <a-video id="a-vid1" src="#vid1" position="0 0 0" width="1" height="0.628" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
       </a-entity>
 
       <!-- Bild 2 -->
-      <a-entity id="target2" mindar-image-target="targetIndex: 0">
+      <a-entity id="target2" mindar-image-target="targetIndex: 1">
         <a-video id="a-vid2" src="#vid2" position="0 0 0" width="1" height="0.628" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
+      </a-entity>
+
+      <!-- Bild 3 (Nu med vanlig platt video, plus faktarutan till höger) -->
+      <a-entity id="target3" mindar-image-target="targetIndex: 2">
+        <a-video id="a-vid3" src="#vid3" position="0 0 0" width="1" height="0.628" scale="1.02 1.02 1.02" material="opacity: 0; transparent: true"></a-video>
+        <!-- Faktarutan skjuts ut till höger (X=1.0) men ligger platt (Z=0) -->
+        <a-image id="a-fakta1" src="#fakta1" position="1.0 0 0" width="0.7" height="1.0" material="opacity: 0; transparent: true"></a-image>
       </a-entity>
 
     </a-scene>
