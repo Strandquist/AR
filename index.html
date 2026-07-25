@@ -42,11 +42,11 @@
         });
 
         // Struktur för alla targets. 
-        // Faktarutan är kopplad till target 3.
+        // Target 3 har nu en "extraVid" istället för en statisk bild.
         const targets = [
-          { target: document.querySelector('#target1'), vid: document.querySelector('#vid1'), aVid: document.querySelector('#a-vid1'), extra: null, timeout: null, fadeInterval: null },
-          { target: document.querySelector('#target2'), vid: document.querySelector('#vid2'), aVid: document.querySelector('#a-vid2'), extra: null, timeout: null, fadeInterval: null },
-          { target: document.querySelector('#target3'), vid: document.querySelector('#vid3'), aVid: document.querySelector('#a-vid3'), extra: document.querySelector('#a-fakta1'), timeout: null, fadeInterval: null }
+          { target: document.querySelector('#target1'), vid: document.querySelector('#vid1'), aVid: document.querySelector('#a-vid1'), extraVid: null, aExtra: null, timeout: null, fadeInterval: null },
+          { target: document.querySelector('#target2'), vid: document.querySelector('#vid2'), aVid: document.querySelector('#a-vid2'), extraVid: null, aExtra: null, timeout: null, fadeInterval: null },
+          { target: document.querySelector('#target3'), vid: document.querySelector('#vid3'), aVid: document.querySelector('#a-vid3'), extraVid: document.querySelector('#vid-fakta1'), aExtra: document.querySelector('#a-fakta1'), timeout: null, fadeInterval: null }
         ];
 
         const playVideo = (item) => {
@@ -54,19 +54,20 @@
           clearInterval(item.fadeInterval);
 
           if (item.vid.paused) {
+            // Spela huvudvideon
             item.vid.currentTime = 0; 
             item.vid.volume = 0; 
             item.vid.play();
-
-            // Tona in videon
             item.aVid.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
             
-            // Tona in faktarutan (om den finns på detta target)
-            if (item.extra) {
-              item.extra.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
+            // Spela faktaruta-videon (om den finns på detta target)
+            if (item.extraVid) {
+              item.extraVid.currentTime = 0;
+              item.extraVid.play();
+              item.aExtra.setAttribute('animation', 'property: material.opacity; to: 1; dur: 500; easing: easeInOutQuad');
             }
 
-            // Tona in ljudet
+            // Tona in ljudet för huvudvideon
             let vol = 0;
             const step = 0.05; 
             item.fadeInterval = setInterval(() => {
@@ -84,15 +85,17 @@
         const pauseVideo = (item) => {
           clearInterval(item.fadeInterval);
           item.timeout = setTimeout(() => {
+            // Pausa huvudvideon
             item.vid.pause();
             item.vid.volume = 0;
-            
             item.aVid.removeAttribute('animation');
             item.aVid.setAttribute('material', 'opacity: 0');
             
-            if (item.extra) {
-              item.extra.removeAttribute('animation');
-              item.extra.setAttribute('material', 'opacity: 0');
+            // Pausa faktaruta-videon
+            if (item.extraVid) {
+              item.extraVid.pause();
+              item.aExtra.removeAttribute('animation');
+              item.aExtra.setAttribute('material', 'opacity: 0');
             }
           }, 500);
         };
@@ -122,8 +125,9 @@
         <video id="vid1" src="video1.mp4" preload="metadata" loop muted playsinline></video>
         <video id="vid2" src="video2.mp4" preload="metadata" loop muted playsinline></video>
         <video id="vid3" src="video3.mp4" preload="metadata" loop muted playsinline></video>
-        <!-- Faktarutan som PNG -->
-        <img id="fakta1" src="fakta1.png">
+        
+        <!-- Din animerade faktaruta som en WebM-video laddas in här -->
+        <video id="vid-fakta1" src="fakta1.webm" preload="metadata" loop muted playsinline></video>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
@@ -138,11 +142,13 @@
         <a-video id="a-vid2" src="#vid2" position="0 0 0" width="1" height="0.628" scale="1 1 1" material="opacity: 0; transparent: true"></a-video>
       </a-entity>
 
-      <!-- Bild 3 (Nu med vanlig platt video, plus faktarutan till höger) -->
+      <!-- Bild 3 -->
       <a-entity id="target3" mindar-image-target="targetIndex: 2">
+        <!-- Huvudvideon -->
         <a-video id="a-vid3" src="#vid3" position="0 0 0" width="1" height="0.628" scale="1 1 1" material="opacity: 0; transparent: true"></a-video>
-        <!-- Faktarutan skjuts ut till höger (X=1.0) men ligger platt (Z=0) -->
-        <a-image id="a-fakta1" src="#fakta1" position="1.0 0 0" width="0.7" height="1.0" material="opacity: 0; transparent: true"></a-image>
+        
+        <!-- Den animerade faktarutan: Koden är nu en <a-video> istället för <a-image> -->
+        <a-video id="a-fakta1" src="#vid-fakta1" position="0.75 0 0" width="0.45" height="0.628" material="opacity: 0; transparent: true"></a-video>
       </a-entity>
 
     </a-scene>
