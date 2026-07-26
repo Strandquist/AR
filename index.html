@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Fotoalbumet</title>
  
-    <!-- Gör att sidan kan läggas till på hemskärmen och startas utan
-         webbläsarens adressfält. iOS läser apple-touch-icon, Android
-         läser manifest.json. -->
     <meta name="theme-color" content="#14110E" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -26,13 +23,9 @@
  
     <style>
       html, body { margin: 0; overflow: hidden; }
- 
-      /* Kamerabilden ligger i ett <video> med z-index: -2. En opak bakgrund
-         på <body> målas ovanpå den. Färgen måste därför sitta på <html>. */
       html { background: #14110E; }
       body { background: transparent; }
  
-      /* ============ STARTSKÄRM ============ */
       #start-screen {
         position: fixed; inset: 0;
         background: radial-gradient(circle at 50% 35%, #1f1b16 0%, #14110E 70%);
@@ -66,7 +59,6 @@
       #start-btn:disabled { opacity: 0.5; }
       #start-error { font-size: 13px; color: #e08a8a; margin-top: 16px; display: none; }
  
-      /* ============ SKANNINGS-UI ============ */
       #scan-ui {
         position: fixed; inset: 0; z-index: 9000;
         display: flex; flex-direction: column;
@@ -98,11 +90,21 @@
         margin-top: 34px; white-space: nowrap;
       }
       @media (prefers-reduced-motion: reduce) { .scan-frame { animation: none; } }
+ 
+      /* Syns bara om uppspelningen faktiskt nekas */
+      #toast {
+        position: fixed; left: 16px; right: 16px; bottom: 26px; z-index: 11000;
+        font-family: "Inter", sans-serif; font-size: 12px; line-height: 1.5;
+        color: #ffe0e0; background: rgba(90,20,20,0.9);
+        padding: 12px 16px; border-radius: 10px; text-align: center;
+        opacity: 0; transition: opacity 0.4s ease; pointer-events: none;
+      }
+      #toast.visible { opacity: 1; }
     </style>
  
     <script>
       /* =====================================================================
-         1. STABILISATOR — vinkelmedveten utjämning av MindAR:s pose
+         1. STABILISATOR
       ===================================================================== */
       AFRAME.registerComponent("stabilizer", {
         schema: {
@@ -111,28 +113,22 @@
           scaleTau: { default: 0.16 },
           obliqueBoost: { default: 2.5 }
         },
- 
         init: function () {
           this.el.object3D.matrixAutoUpdate = false;
- 
           this.sPos = new THREE.Vector3();
           this.sQuat = new THREE.Quaternion();
           this.sScale = new THREE.Vector3(1, 1, 1);
           this.tPos = new THREE.Vector3();
           this.tQuat = new THREE.Quaternion();
           this.tScale = new THREE.Vector3(1, 1, 1);
- 
           this.out = new THREE.Matrix4();
           this.lastWritten = new THREE.Matrix4();
           this.hasWritten = false;
           this.snap = true;
- 
           this.normal = new THREE.Vector3();
           this.toCam = new THREE.Vector3();
- 
           this.el.addEventListener("targetFound", () => { this.snap = true; });
         },
- 
         tick: function (time, dt) {
           const o = this.el.object3D;
           if (!o.visible) { this.snap = true; return; }
@@ -154,11 +150,9 @@
             this.toCam.copy(this.tPos).normalize().negate();
             const facing = Math.abs(this.normal.dot(this.toCam));
             const oblique = Math.min(1, Math.max(0, 1 - facing));
- 
             const k = 1 + this.data.obliqueBoost * oblique * oblique;
             const secs = dt / 1000;
             const alpha = (tau) => 1 - Math.exp(-secs / (tau * k));
- 
             this.sPos.lerp(this.tPos, alpha(this.data.posTau));
             this.sQuat.slerp(this.tQuat, alpha(this.data.rotTau));
             this.sScale.lerp(this.tScale, alpha(this.data.scaleTau));
@@ -173,7 +167,7 @@
       });
  
       /* =====================================================================
-         2. SKARP TEXTUR VID SNEDA VINKLAR (anisotrop filtrering)
+         2. SKARP TEXTUR VID SNEDA VINKLAR
       ===================================================================== */
       AFRAME.registerComponent("sharp-texture", {
         init: function () {
@@ -202,13 +196,11 @@
       });
  
       /* =====================================================================
-         3. RUNDADE HÖRN — formade i geometrin, inte som alfamask.
-         Din DaVinci-export kan alltså ha helt raka hörn; de rundas här.
+         3. RUNDADE HÖRN I GEOMETRIN
       ===================================================================== */
       function roundedRectGeometry(w, h, radius, segments) {
         const r = Math.min(radius, Math.min(w, h) / 2);
         const x = -w / 2, y = -h / 2;
- 
         const shape = new THREE.Shape();
         shape.moveTo(x + r, y);
         shape.lineTo(x + w - r, y);
@@ -221,7 +213,6 @@
         shape.quadraticCurveTo(x, y, x + r, y);
  
         const geo = new THREE.ShapeGeometry(shape, segments);
- 
         const pos = geo.attributes.position;
         const uv = geo.attributes.uv;
         for (let i = 0; i < pos.count; i++) {
@@ -233,7 +224,6 @@
  
       AFRAME.registerComponent("rounded-corners", {
         schema: { radius: { default: 0.035 }, segments: { default: 6 } },
- 
         init: function () {
           this.apply = this.apply.bind(this);
           this.apply();
@@ -242,12 +232,11 @@
             if (e.detail.name === "geometry") this.apply();
           });
         },
- 
         apply: function () {
           const mesh = this.el.getObject3D("mesh");
           if (!mesh || !mesh.geometry) return;
           const p = mesh.geometry.parameters;
-          if (!p || typeof p.width !== "number") return; // redan utbytt
+          if (!p || typeof p.width !== "number") return;
           const geo = roundedRectGeometry(p.width, p.height, this.data.radius, this.data.segments);
           mesh.geometry.dispose();
           mesh.geometry = geo;
@@ -255,7 +244,7 @@
       });
  
       /* =====================================================================
-         4. MJUK SKUGGA — tät, förskjuten och svag
+         4. MJUK SKUGGA
       ===================================================================== */
       AFRAME.registerComponent("soft-shadow", {
         schema: { blur: { default: 34 }, inset: { default: 46 } },
@@ -282,7 +271,7 @@
       });
  
       /* =====================================================================
-         5. VALFRITT: anpassa planets höjd efter videons bildförhållande
+         5. VALFRITT: höjd efter videons bildförhållande
       ===================================================================== */
       AFRAME.registerComponent("fit-to-video", {
         schema: { src: { type: "selector" } },
@@ -306,11 +295,114 @@
         const startBtn = document.querySelector("#start-btn");
         const startError = document.querySelector("#start-error");
         const scanUi = document.querySelector("#scan-ui");
+        const toast = document.querySelector("#toast");
+ 
+        const DEBUG = new URLSearchParams(location.search).has("debug");
+        const allVideos = Array.from(document.querySelectorAll("a-assets video"));
+ 
+        /* ---------- Diagnostik ---------- */
+        let panel = null, logEl = null;
+        if (DEBUG) {
+          panel = document.createElement("div");
+          panel.style.cssText =
+            "position:fixed;left:8px;bottom:8px;right:8px;z-index:11000;" +
+            "font:11px/1.45 ui-monospace,Menlo,monospace;color:#d8ffd8;" +
+            "background:rgba(0,0,0,0.82);padding:10px 12px;border-radius:8px;" +
+            "max-height:44vh;overflow:auto;white-space:pre-wrap;pointer-events:none";
+          document.body.appendChild(panel);
+          logEl = document.createElement("div");
+          logEl.style.cssText = "margin-top:8px;color:#ffd9a8";
+        }
+        const logLine = (msg) => {
+          if (!DEBUG) return;
+          const t = new Date().toLocaleTimeString("sv-SE");
+          logEl.textContent = (t + "  " + msg + "\n" + logEl.textContent).slice(0, 1200);
+        };
+        let toastTimer = null;
+        const showToast = (msg) => {
+          toast.textContent = msg;
+          toast.classList.add("visible");
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => toast.classList.remove("visible"), 6000);
+        };
+ 
+        allVideos.forEach((v) => {
+          v.addEventListener("error", () => {
+            const codes = { 1: "avbruten", 2: "nätverksfel", 3: "avkodningsfel", 4: "HITTAS EJ / format stöds ej" };
+            const msg = v.getAttribute("src") + ": " + (v.error ? codes[v.error.code] || v.error.code : "okänt");
+            logLine("FEL " + msg);
+            showToast("Videofilen kunde inte laddas — " + msg);
+          });
+        });
+ 
+        if (DEBUG) {
+          setInterval(() => {
+            panel.textContent = allVideos.map((v) => {
+              const st = ["inget", "metadata", "aktuell", "framtida", "klar"][v.readyState];
+              return v.id.padEnd(11) + (v.paused ? "PAUSAD " : "spelar ") +
+                     "rs=" + st.padEnd(9) + "t=" + v.currentTime.toFixed(1) +
+                     (v.muted ? " mutad" : " ljud");
+            }).join("\n");
+            panel.appendChild(logEl);
+          }, 400);
+        }
+ 
+        /* ---------- Uppspelning ----------
+           Nyckeln till att det ska fungera överallt: starta ALLTID mutad.
+           Mutad uppspelning tillåts av alla webbläsare. Först när videon
+           bevisligen rullar slår vi på ljudet, vilket är tillåtet eftersom
+           elementet redan låstes upp av knapptrycket. Tidigare avmutade jag
+           innan play(), och då nekades hela uppspelningen — videon stod kvar
+           på första bildrutan. Hemskärmsappar på iOS är extra strikta här,
+           vilket förklarar varför det slutade fungera just när du la till
+           albumet på hemskärmen.
+        */
+        const fadeSoundIn = (v) => {
+          clearInterval(v._fade);
+          v.muted = false;
+          v.volume = 0;
+          let vol = 0;
+          v._fade = setInterval(() => {
+            vol += 0.05;
+            if (vol >= 1) { v.volume = 1; clearInterval(v._fade); }
+            else { try { v.volume = vol; } catch (e) { clearInterval(v._fade); } }
+          }, 25);
+        };
+ 
+        const fadeSoundOut = (v) => {
+          clearInterval(v._fade);
+          v._fade = setInterval(() => {
+            const next = Math.max(0, v.volume - 0.1);
+            v.volume = next;
+            if (next <= 0) clearInterval(v._fade);
+          }, 25);
+        };
+ 
+        const startMedia = (v, withSound) => {
+          if (!v) return;
+          clearInterval(v._fade);
+          try { v.currentTime = 0; } catch (e) {}
+          v.muted = true;
+          v.volume = 0;
+          const p = v.play();
+          if (p && p.then) {
+            p.then(() => {
+              logLine(v.id + ": spelar");
+              if (withSound) fadeSoundIn(v);
+            }).catch((e) => {
+              if (e.name === "AbortError") return;
+              logLine("play() nekad " + v.id + ": " + e.name);
+              showToast("Videon kunde inte startas (" + e.name + "). Prova att öppna sidan i Safari istället för från hemskärmen.");
+            });
+          } else if (withSound) {
+            fadeSoundIn(v);
+          }
+        };
  
         const T_VIDEO_FADE  = 600;
         const T_PANEL_FADE  = 550;
         const T_PANEL_SLIDE = 750;
-        const PANEL_X       = 0.75;   // -0.75 om du vill ha kortet till vänster
+        const PANEL_X       = 0.75;
         const PANEL_HOME    = "0 0 0.02";
  
         const targets = [
@@ -328,101 +420,44 @@
               { el: document.querySelector("#a-fakta1"),     to: 1 }
             ] }
         ];
- 
-        /* =================================================================
-           FELSÖKNING
-           Lägg till ?debug i adressen, t.ex.
-             https://dittnamn.github.io/album/?debug
-           så visas en panel med varje videos tillstånd och alla fel.
-        ================================================================= */
-        const DEBUG = new URLSearchParams(location.search).has("debug");
-        const allVideos = Array.from(document.querySelectorAll("a-assets video"));
-        let panel = null, logEl = null;
- 
-        if (DEBUG) {
-          panel = document.createElement("div");
-          panel.style.cssText =
-            "position:fixed;left:8px;bottom:8px;right:8px;z-index:11000;" +
-            "font:11px/1.45 ui-monospace,Menlo,monospace;color:#d8ffd8;" +
-            "background:rgba(0,0,0,0.82);padding:10px 12px;border-radius:8px;" +
-            "max-height:44vh;overflow:auto;white-space:pre-wrap;pointer-events:none";
-          document.body.appendChild(panel);
-          logEl = document.createElement("div");
-          logEl.style.cssText = "margin-top:8px;color:#ffd9a8";
-        }
- 
-        const logLine = (msg) => {
-          if (!DEBUG) return;
-          const t = new Date().toLocaleTimeString("sv-SE");
-          logEl.textContent = (t + "  " + msg + "\n" + logEl.textContent).slice(0, 1200);
-        };
- 
-        // Rapportera trasiga filnamn direkt — 404 eller fel versaler syns här
-        allVideos.forEach((v) => {
-          v.addEventListener("error", () => {
-            const codes = { 1: "avbruten", 2: "nätverksfel", 3: "avkodningsfel", 4: "HITTAS EJ / format stöds ej" };
-            logLine("FEL " + v.id + " (" + v.getAttribute("src") + "): " +
-                    (v.error ? codes[v.error.code] || v.error.code : "okänt"));
-          });
-        });
- 
-        if (DEBUG) {
-          setInterval(() => {
-            const rows = allVideos.map((v) => {
-              const st = ["inget", "metadata", "aktuell data", "framtida data", "klar"][v.readyState];
-              return v.id.padEnd(11) +
-                     (v.paused ? "PAUSAD " : "spelar ") +
-                     "rs=" + st.padEnd(13) +
-                     "t=" + v.currentTime.toFixed(1) +
-                     (v.muted ? " mutad" : "");
-            });
-            panel.textContent = rows.join("\n");
-            panel.appendChild(logEl);
-          }, 400);
-        }
+        targets.forEach((i) => (i.active = false));
  
         let wakeLock = null;
         const keepAwake = async () => {
           try {
             if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
-          } catch (e) { /* stöds inte — ingen fara */ }
+          } catch (e) {}
         };
  
         const goFullscreen = () => {
           const el = document.documentElement;
           const fn = el.requestFullscreen || el.webkitRequestFullscreen;
-          // iOS Safari saknar detta API. Där får man samma effekt genom att
-          // lägga sidan på hemskärmen.
           if (!fn) return;
           try {
             const p = fn.call(el);
-            if (p && p.catch) p.catch((e) => logLine("fullskärm nekad: " + e.name));
-          } catch (e) { logLine("fullskärm fel: " + e.name); }
+            if (p && p.catch) p.catch(() => {});
+          } catch (e) {}
         };
  
         startBtn.addEventListener("click", async () => {
           startBtn.disabled = true;
           startBtn.textContent = "Startar kameran…";
-          // VIKTIGT: Safari kräver att varje videoelement har spelats en gång
-          // under en användargest för att få spelas programmatiskt senare.
-          // Vi startar och pausar alla direkt här, medan trycket räknas.
+ 
+          // Lås upp varje videoelement synkront medan trycket räknas som
+          // användargest. play() följt av pause() i samma anrop är det
+          // etablerade sättet; AbortError som uppstår är ofarligt.
           allVideos.forEach((v) => {
             v.muted = true;
             const p = v.play();
-            if (p && p.then) {
-              p.then(() => {
-                v.pause();
-                v.currentTime = 0;
-                v.muted = false;
-                logLine(v.id + ": upplåst");
-              }).catch((e) => {
-                logLine(v.id + ": kunde inte låsas upp — " + e.name);
-              });
-            }
+            if (p && p.catch) p.catch(() => {});
+            v.pause();
+            try { v.currentTime = 0; } catch (e) {}
+            logLine(v.id + ": upplåst");
           });
  
           keepAwake();
           goFullscreen();
+ 
           try {
             await sceneEl.systems["mindar-image-system"].start();
           } catch (e) {
@@ -451,66 +486,51 @@
  
         const playVideo = (item) => {
           clearTimeout(item.timeout);
-          clearInterval(item.fadeInterval);
+ 
+          // Egen flagga istället för att läsa av vid.paused. Videons
+          // paus-tillstånd hinner ändras av upplåsningen och av
+          // webbläsarens egna beslut, vilket gjorde att hela blocket
+          // ibland hoppades över.
+          if (item.active) return;
+          item.active = true;
           activeCount++;
           updateScanUi();
  
-          if (item.vid.paused) {
-            if (navigator.vibrate) navigator.vibrate(12);
+          if (navigator.vibrate) navigator.vibrate(12);
  
-            item.vid.currentTime = 0;
-            item.vid.volume = 0;
-            item.vid.play().catch((e) => logLine("play() nekad för " + item.vid.id + " — " + e.name + ": " + e.message));
+          startMedia(item.vid, true);
+          startMedia(item.faktaVidFile, false);
  
-            item.wrapper.removeAttribute("animation__scale");
-            item.wrapper.setAttribute("animation__scale",
-              "property: scale; from: 0.93 0.93 0.93; to: 1 1 1; dur: 650; easing: easeOutQuint");
+          item.wrapper.removeAttribute("animation__scale");
+          item.wrapper.setAttribute("animation__scale",
+            "property: scale; from: 0.93 0.93 0.93; to: 1 1 1; dur: 650; easing: easeOutQuint");
  
-            item.aVid.removeAttribute("animation__fade");
-            item.aVid.setAttribute("animation__fade",
-              "property: material.opacity; from: 0; to: 1; dur: " + T_VIDEO_FADE + "; easing: easeOutQuad");
+          item.aVid.removeAttribute("animation__fade");
+          item.aVid.setAttribute("animation__fade",
+            "property: material.opacity; from: 0; to: 1; dur: " + T_VIDEO_FADE + "; easing: easeOutQuad");
  
-            if (item.faktaContainer) {
-              if (item.faktaVidFile) {
-                item.faktaVidFile.currentTime = 0;
-                item.faktaVidFile.play().catch((e) =>
-                  logLine("play() nekad för faktavideon — " + e.name + ": " + e.message));
-              }
- 
-              // Steg 1: kortet blir synligt medan det ännu är dolt bakom videon
-              item.faktaLayers.forEach((l) => {
-                if (!l.el) return;
-                l.el.removeAttribute("animation__fade");
-                l.el.setAttribute("animation__fade",
-                  "property: material.opacity; from: 0; to: " + l.to +
-                  "; dur: 300; delay: " + T_PANEL_FADE + "; easing: linear");
-              });
- 
-              // Steg 2: kortet glider ut åt höger
-              item.faktaContainer.removeAttribute("animation__slide");
-              item.faktaContainer.setAttribute("animation__slide",
-                "property: position; from: " + PANEL_HOME + "; to: " + PANEL_X + " 0 0.02; " +
-                "dur: " + T_PANEL_SLIDE + "; delay: " + (T_PANEL_FADE + 150) + "; easing: easeOutQuint");
-            }
- 
-            item.vol = 0;
-            item.fadeInterval = setInterval(() => {
-              item.vol += 0.05;
-              if (item.vol >= 1) { item.vid.volume = 1; clearInterval(item.fadeInterval); }
-              else item.vid.volume = item.vol;
-            }, 25);
+          if (item.faktaContainer) {
+            item.faktaLayers.forEach((l) => {
+              if (!l.el) return;
+              l.el.removeAttribute("animation__fade");
+              l.el.setAttribute("animation__fade",
+                "property: material.opacity; from: 0; to: " + l.to +
+                "; dur: 300; delay: " + T_PANEL_FADE + "; easing: linear");
+            });
+            item.faktaContainer.removeAttribute("animation__slide");
+            item.faktaContainer.setAttribute("animation__slide",
+              "property: position; from: " + PANEL_HOME + "; to: " + PANEL_X + " 0 0.02; " +
+              "dur: " + T_PANEL_SLIDE + "; delay: " + (T_PANEL_FADE + 150) + "; easing: easeOutQuint");
           }
         };
  
         const pauseVideo = (item) => {
-          clearInterval(item.fadeInterval);
+          if (!item.active) return;
+          item.active = false;
           activeCount = Math.max(0, activeCount - 1);
           updateScanUi();
  
-          item.fadeInterval = setInterval(() => {
-            item.vid.volume = Math.max(0, item.vid.volume - 0.1);
-            if (item.vid.volume <= 0) clearInterval(item.fadeInterval);
-          }, 25);
+          fadeSoundOut(item.vid);
  
           item.aVid.removeAttribute("animation__fade");
           item.aVid.setAttribute("animation__fade",
@@ -529,13 +549,13 @@
           }
  
           item.timeout = setTimeout(() => {
+            if (item.active) return; // fotot hittades igen under tiden
             item.vid.pause();
-            item.vid.volume = 0;
+            if (item.faktaVidFile) item.faktaVidFile.pause();
             item.aVid.setAttribute("material", "opacity", 0);
             item.wrapper.setAttribute("scale", "1 1 1");
  
             if (item.faktaContainer) {
-              item.faktaVidFile.pause();
               item.faktaContainer.removeAttribute("animation__slide");
               item.faktaContainer.setAttribute("position", PANEL_HOME);
               item.faktaLayers.forEach((l) => {
@@ -554,16 +574,13 @@
  
         document.addEventListener("visibilitychange", () => {
           if (document.hidden) {
-            targets.forEach((i) => {
-              i.vid.pause();
-              if (i.faktaVidFile) i.faktaVidFile.pause();
-            });
+            allVideos.forEach((v) => v.pause());
           } else {
             keepAwake();
             targets.forEach((i) => {
-              if (i.target.object3D.visible) {
-                i.vid.play().catch((e) => logLine("återuppta nekad " + i.vid.id + ": " + e.name));
-                if (i.faktaVidFile) i.faktaVidFile.play().catch(() => {});
+              if (i.active) {
+                startMedia(i.vid, true);
+                startMedia(i.faktaVidFile, false);
               }
             });
           }
@@ -585,6 +602,8 @@
       <p>Rikta kameran mot ett foto</p>
     </div>
  
+    <div id="toast"></div>
+ 
     <a-scene
       mindar-image="imageTargetSrc: target.mind; autoStart: no; filterMinCF: 0.001; filterBeta: 1000; missTolerance: 10; warmupTolerance: 5; uiLoading: no; uiScanning: no;"
       color-space="sRGB"
@@ -593,20 +612,14 @@
       device-orientation-permission-ui="enabled: false"
     >
       <a-assets>
-        <video id="vid1" src="video1.mp4" preload="auto" loop muted playsinline crossorigin="anonymous"></video>
-        <video id="vid2" src="video2.mp4" preload="auto" loop muted playsinline crossorigin="anonymous"></video>
-        <video id="vid3" src="video3.mp4" preload="auto" loop muted playsinline crossorigin="anonymous"></video>
- 
-        <!-- Ditt faktakort från DaVinci. Rendera det som ett OPAKT ljust kort
-             (papper #F4EFE6, mörk text) och exportera som H.264 MP4 — då
-             behövs ingen alfakanal, filen blir mindre och den fungerar även
-             i Safari, som inte klarar alfa-WebM. Byt filnamnet nedan. -->
-        <video id="vid-fakta1" src="fakta1.mp4" preload="auto" loop muted playsinline crossorigin="anonymous"></video>
+        <video id="vid1" src="video1.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+        <video id="vid2" src="video2.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+        <video id="vid3" src="video3.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+        <video id="vid-fakta1" src="fakta1.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
       </a-assets>
  
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
  
-      <!-- Bild 1 -->
       <a-entity id="target1" mindar-image-target="targetIndex: 0" stabilizer>
         <a-entity id="wrap1">
           <a-video id="a-vid1" src="#vid1" position="0 0 0.04" width="1" height="0.628"
@@ -615,7 +628,6 @@
         </a-entity>
       </a-entity>
  
-      <!-- Bild 2 -->
       <a-entity id="target2" mindar-image-target="targetIndex: 1" stabilizer>
         <a-entity id="wrap2">
           <a-video id="a-vid2" src="#vid2" position="0 0 0.04" width="1" height="0.628"
@@ -624,24 +636,15 @@
         </a-entity>
       </a-entity>
  
-      <!-- Bild 3 (med faktakort) -->
       <a-entity id="target3" mindar-image-target="targetIndex: 2" stabilizer>
         <a-entity id="wrap3">
- 
-          <!-- Tre lager med koncentriska hörnradier:
-                 skugga – tät, förskjuten ned/höger, 22 % styrka
-                 kant   – 0,4 % bredare, dämpad papperston = kortets tjocklek
-                 kortet – din DaVinci-video
-               Den svarta plattan är borta; kortet är nu opakt i sig. -->
           <a-entity id="fakta-container" position="0 0 0.02">
             <a-plane id="fakta-shadow" width="0.53" height="0.72" position="0.012 -0.016 -0.004"
                      soft-shadow rounded-corners="radius: 0.06"
                      material="shader: flat; color: #FFFFFF; opacity: 0; transparent: true; depthWrite: false"></a-plane>
- 
             <a-plane id="fakta-rim" width="0.458" height="0.636" position="0 0 -0.002"
                      rounded-corners="radius: 0.039"
                      material="shader: flat; color: #C9BEA8; opacity: 0; transparent: true"></a-plane>
- 
             <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0"
                      rounded-corners="radius: 0.035" sharp-texture
                      material="shader: flat; opacity: 0; transparent: true"></a-video>
