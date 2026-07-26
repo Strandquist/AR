@@ -12,7 +12,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
  
     <style>
-      html, body { margin: 0; overflow: hidden; background: #0a0a0a; }
+      html, body { margin: 0; overflow: hidden; }
+ 
+      /* VIKTIGT för att kamerabilden ska synas:
+         MindAR lägger kameraströmmen i ett <video> med z-index: -2. Ett
+         negativt z-index målas FÖRE <body>s egen bakgrund, så en opak
+         bakgrund på body täcker över hela kamerabilden — allt blir svart
+         utom det A-Frame ritar i sin canvas.
+         html-elementets bakgrund blir däremot sidans "canvas background"
+         och målas allra underst, under kameravideon. Därför sitter
+         färgen här och body hålls transparent. */
+      html { background: #0a0a0a; }
+      body { background: transparent; }
  
       /* ============ STARTSKÄRM ============ */
       #start-screen {
@@ -24,7 +35,7 @@
         font-family: "Inter", -apple-system, sans-serif;
         text-align: center; padding: 0 30px;
       }
-      #start-screen.hidden { opacity: 0; pointer-events: none; }
+      #start-screen.hidden { opacity: 0; pointer-events: none; visibility: hidden; }
       #start-screen .eyebrow {
         font-size: 11px; letter-spacing: 4px; text-transform: uppercase;
         color: rgba(255,255,255,0.45); margin: 0;
@@ -452,7 +463,7 @@
     <a-scene
       mindar-image="imageTargetSrc: target.mind; autoStart: no; filterMinCF: 0.001; filterBeta: 1000; missTolerance: 10; warmupTolerance: 5; uiLoading: no; uiScanning: no;"
       color-space="sRGB"
-      renderer="colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true; precision: high"
+      renderer="colorManagement: true; physicallyCorrectLights: true; antialias: true; precision: high"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
     >
