@@ -91,7 +91,6 @@
       }
       @media (prefers-reduced-motion: reduce) { .scan-frame { animation: none; } }
  
-      /* Syns bara om uppspelningen faktiskt nekas */
       #toast {
         position: fixed; left: 16px; right: 16px; bottom: 26px; z-index: 11000;
         font-family: "Inter", sans-serif; font-size: 12px; line-height: 1.5;
@@ -104,7 +103,7 @@
  
     <script>
       /* =====================================================================
-         1. STABILISATOR
+         1. STABILISATOR — vinkelmedveten utjämning av MindAR:s pose
       ===================================================================== */
       AFRAME.registerComponent("stabilizer", {
         schema: {
@@ -167,7 +166,7 @@
       });
  
       /* =====================================================================
-         2. SKARP TEXTUR VID SNEDA VINKLAR
+         2. SKARP TEXTUR VID SNEDA VINKLAR (anisotrop filtrering)
       ===================================================================== */
       AFRAME.registerComponent("sharp-texture", {
         init: function () {
@@ -196,7 +195,7 @@
       });
  
       /* =====================================================================
-         3. RUNDADE HÖRN I GEOMETRIN
+         3. RUNDADE HÖRN — formade i geometrin, radien i världsenheter
       ===================================================================== */
       function roundedRectGeometry(w, h, radius, segments) {
         const r = Math.min(radius, Math.min(w, h) / 2);
@@ -244,24 +243,20 @@
       });
  
       /* =====================================================================
-         4. MJUK SKUGGA
- 
-         Bygger sin textur efter elementets faktiska proportioner, så den
-         fungerar för vilken kortstorlek som helst utan att hörnen dras ut
-         till ovaler. Alla mått anges i världsenheter, samma som width/height.
+         4. MJUK SKUGGA — bygger sin textur efter elementets proportioner
       ===================================================================== */
       AFRAME.registerComponent("soft-shadow", {
         schema: {
-          inset:  { default: 0.045 },  // hur långt in den mörka ytan börjar
-          blur:   { default: 0.035 },  // suddighetens bredd
-          radius: { default: 0.05 }    // hörnradie
+          inset:  { default: 0.045 },
+          blur:   { default: 0.035 },
+          radius: { default: 0.05 }
         },
         init: function () {
           const w = parseFloat(this.el.getAttribute("width"));
           const h = parseFloat(this.el.getAttribute("height"));
           if (!w || !h) return;
  
-          const ppu = 700 / Math.max(w, h);          // pixlar per världsenhet
+          const ppu = 700 / Math.max(w, h);
           const W = Math.round(w * ppu);
           const H = Math.round(h * ppu);
           const m = this.data.inset * ppu;
@@ -286,7 +281,6 @@
               ctx.fillRect(m, m, rw, rh);
             }
           } else {
-            // Fallback för äldre webbläsare utan ctx.filter
             for (let i = 0; i < 14; i++) {
               ctx.fillStyle = "rgba(0,0,0,0.08)";
               const p = Math.max(0, m - i * (b / 8));
@@ -298,58 +292,6 @@
         }
       });
  
-      /* =====================================================================
-         5. VALFRITT: höjd efter videons bildförhållande
-      ===================================================================== */
-      AFRAME.registerComponent("fit-to-video", {
-        schema: { src: { type: "selector" } },
-        init: function () {
-          const v = this.data.src;
-          if (!v) return;
-          const apply = () => {
-            if (!v.videoWidth) return;
-            const w = parseFloat(this.el.getAttribute("width")) || 1;
-            this.el.setAttribute("height", w * (v.videoHeight / v.videoWidth));
-          };
-          if (v.readyState >= 1) apply();
-          v.addEventListener("loadedmetadata", apply);
-        }
-      });
- 
-      /* =====================================================================
-         5b. BESKÄRNING — klipper bort inbrända svarta kanter i en video
- 
-         Om din DaVinci-export har kortet centrerat i en bredare ram blir
-         resten svart, och den svärtan sitter i filen. Den här komponenten
-         visar bara en utvald del av bilden istället för hela rutan.
-         Värdena är andelar av bildrutan, räknat från övre vänstra hörnet:
-           x, y = var utsnittet börjar
-           w, h = hur stor del som ska visas
-         Exempel: ett kort som upptar mittersta 52 % av bredden i en
-         1920x1080-ram, i full höjd → crop-texture="x: 0.24; w: 0.52"
-      ===================================================================== */
-      AFRAME.registerComponent("crop-texture", {
-        schema: { x: { default: 0 }, y: { default: 0 }, w: { default: 1 }, h: { default: 1 } },
-        init: function () {
-          const apply = () => {
-            const mesh = this.el.getObject3D("mesh");
-            if (!mesh || !mesh.material || !mesh.material.map) return false;
-            const m = mesh.material.map;
-            m.repeat.set(this.data.w, this.data.h);
-            // three.js räknar UV nedifrån, därför speglas y
-            m.offset.set(this.data.x, 1 - this.data.y - this.data.h);
-            m.needsUpdate = true;
-            return true;
-          };
-          this.el.addEventListener("materialtextureloaded", apply);
-          this.checks = 0;
-          this.interval = setInterval(() => {
-            if (apply() || ++this.checks > 20) clearInterval(this.interval);
-          }, 400);
-        },
-        remove: function () { clearInterval(this.interval); }
-      });
- 
       /* ===================== APP-LOGIK ===================== */
       document.addEventListener("DOMContentLoaded", function () {
         const sceneEl = document.querySelector("a-scene");
@@ -358,6 +300,30 @@
         const startError = document.querySelector("#start-error");
         const scanUi = document.querySelector("#scan-ui");
         const toast = document.querySelector("#toast");
+ 
+        /* ---------------------------------------------------------------
+           KORTETS GENOMSKINLIGHET
+           Gäller hela kortet som en enhet — papper, kant och skugga — så
+           att lagren aldrig hamnar i otakt med varandra.
+             1.00 = helt tätt, läser tydligast som ett fysiskt kort
+             0.94 = värdet nedan, en aning genomskinligt
+             under 0.88 börjar den beige kanten synas genom kortets yta
+        --------------------------------------------------------------- */
+        const CARD_OPACITY = 0.94;
+ 
+        /* ---------------------------------------------------------------
+           UPPSÄTTNING
+           t = fotots nummer, f = faktakortets nummer (utelämnas om fotot
+           saknar kort). Vill du lägga till ett femte foto med kort räcker
+           det att lägga till en rad här och kopiera motsvarande HTML-block
+           längst ned.
+        --------------------------------------------------------------- */
+        const LAYOUT = [
+          { t: 1 },
+          { t: 2 },
+          { t: 3, f: 1 },
+          { t: 4, f: 2 }
+        ];
  
         const DEBUG = new URLSearchParams(location.search).has("debug");
         const allVideos = Array.from(document.querySelectorAll("a-assets video"));
@@ -382,9 +348,6 @@
         };
         let toastTimer = null;
         const showToast = (msg) => {
-          // Felrutan visas bara med ?debug i adressen. Utan den loggas
-          // problemet tyst — appen ska inte skrämma en besökare med
-          // tekniska meddelanden när uppspelningen ändå fungerar.
           logLine("TOAST: " + msg);
           if (!DEBUG) return;
           toast.textContent = msg;
@@ -409,16 +372,10 @@
         });
  
         if (DEBUG) {
-          const probe = document.createElement("video");
-          logLine("H.264 baseline: " + (probe.canPlayType('video/mp4; codecs="avc1.42E01E"') || "NEJ"));
-          logLine("H.264 high:     " + (probe.canPlayType('video/mp4; codecs="avc1.64001E"') || "NEJ"));
-        }
- 
-        if (DEBUG) {
           setInterval(() => {
             panel.textContent = allVideos.map((v) => {
               const st = ["inget", "metadata", "aktuell", "framtida", "klar"][v.readyState];
-              return v.id.padEnd(11) + (v.paused ? "PAUSAD " : "spelar ") +
+              return v.id.padEnd(12) + (v.paused ? "PAUSAD " : "spelar ") +
                      "rs=" + st.padEnd(9) + "t=" + v.currentTime.toFixed(1) +
                      (v.muted ? " mutad" : " ljud");
             }).join("\n");
@@ -427,14 +384,8 @@
         }
  
         /* ---------- Uppspelning ----------
-           Nyckeln till att det ska fungera överallt: starta ALLTID mutad.
-           Mutad uppspelning tillåts av alla webbläsare. Först när videon
-           bevisligen rullar slår vi på ljudet, vilket är tillåtet eftersom
-           elementet redan låstes upp av knapptrycket. Tidigare avmutade jag
-           innan play(), och då nekades hela uppspelningen — videon stod kvar
-           på första bildrutan. Hemskärmsappar på iOS är extra strikta här,
-           vilket förklarar varför det slutade fungera just när du la till
-           albumet på hemskärmen.
+           Starta alltid mutat; mutad uppspelning tillåts av alla
+           webbläsare. Ljudet slås på först när videon bevisligen rullar.
         */
         let pendingRetry = false;
  
@@ -473,13 +424,8 @@
             }).catch((e) => {
               if (e.name === "AbortError") return;
               logLine("play() nekad " + v.id + ": " + e.name);
- 
-              // Chrome avvisar ibland ett anrop som ändå lyckas strax
-              // efteråt. Kolla först om videon faktiskt rullar innan vi
-              // rapporterar något.
               setTimeout(() => {
                 if (!v.paused && v.currentTime > 0) {
-                  logLine(v.id + ": spelar ändå, ignorerar felet");
                   if (withSound && v.muted) fadeSoundIn(v);
                   return;
                 }
@@ -500,36 +446,38 @@
           }
         };
  
+        /* ---------- Tidsstyrning ---------- */
         const T_VIDEO_FADE  = 600;
-        const T_PANEL_FADE  = 550;   // när kortet tonar in, dolt bakom videon
-        const T_PANEL_SLIDE = 750;   // hur länge utglidningen tar
- 
-        // Faktavideon startar först när kortet är framme, plus en liten
-        // paus. Tidigare rullade den redan under utglidningen, så en
-        // animation gjord i DaVinci hann nästan ta slut innan kortet syntes.
-        // Höj sista talet om du vill ha en längre paus innan den börjar.
+        const T_PANEL_FADE  = 550;
+        const T_PANEL_SLIDE = 750;
         const T_FAKTA_START = T_PANEL_FADE + 150 + T_PANEL_SLIDE + 250;
-        // Fotot slutar vid x = 0.5. Kortet är 0.30 brett, så mitten hamnar
-        // vid 0.5 + 0.03 (mellanrum) + 0.15 (halva kortet) = 0.68.
-        const PANEL_X       = 0.68;
-        const PANEL_HOME    = "0 0 0.02";
  
-        const targets = [
-          { target: document.querySelector("#target1"), wrapper: document.querySelector("#wrap1"),
-            vid: document.querySelector("#vid1"), aVid: document.querySelector("#a-vid1") },
-          { target: document.querySelector("#target2"), wrapper: document.querySelector("#wrap2"),
-            vid: document.querySelector("#vid2"), aVid: document.querySelector("#a-vid2") },
-          { target: document.querySelector("#target3"), wrapper: document.querySelector("#wrap3"),
-            vid: document.querySelector("#vid3"), aVid: document.querySelector("#a-vid3"),
-            faktaContainer: document.querySelector("#fakta-container"),
-            faktaVidFile: document.querySelector("#vid-fakta1"),
-            faktaLayers: [
-              { el: document.querySelector("#fakta-shadow"), to: 0.22 },
-              { el: document.querySelector("#fakta-rim"),    to: 1 },
-              { el: document.querySelector("#a-fakta1"),     to: 1 }
-            ] }
-        ];
-        targets.forEach((i) => (i.active = false));
+        // Fotot slutar vid x = 0.5, kortet är 0.30 brett
+        const PANEL_X    = 0.68;
+        const PANEL_HOME = "0 0 0.02";
+ 
+        /* ---------- Bygg upp listan från LAYOUT ---------- */
+        const targets = LAYOUT.map(({ t, f }) => {
+          const item = {
+            target:  document.querySelector("#target" + t),
+            wrapper: document.querySelector("#wrap" + t),
+            vid:     document.querySelector("#vid" + t),
+            aVid:    document.querySelector("#a-vid" + t),
+            active:  false
+          };
+          if (f) {
+            item.faktaContainer = document.querySelector("#fakta-container" + f);
+            item.faktaVidFile   = document.querySelector("#vid-fakta" + f);
+            item.faktaLayers = [
+              { el: document.querySelector("#fakta-shadow" + f), to: 0.22 * CARD_OPACITY },
+              { el: document.querySelector("#fakta-rim" + f),    to: 1.00 * CARD_OPACITY },
+              { el: document.querySelector("#a-fakta" + f),      to: 1.00 * CARD_OPACITY }
+            ];
+          }
+          return item;
+        }).filter((i) => i.target && i.vid && i.aVid);
+ 
+        logLine("Foton i scenen: " + targets.length);
  
         let wakeLock = null;
         const keepAwake = async () => {
@@ -552,26 +500,19 @@
           startBtn.disabled = true;
           startBtn.textContent = "Startar kameran…";
  
-          // Lås upp varje videoelement synkront medan trycket räknas som
-          // användargest. play() följt av pause() i samma anrop är det
-          // etablerade sättet; AbortError som uppstår är ofarligt.
+          // Lås upp varje videoelement synkront medan trycket räknas
           allVideos.forEach((v) => {
             v.muted = true;
             const p = v.play();
             if (p && p.catch) p.catch(() => {});
             v.pause();
             try { v.currentTime = 0; } catch (e) {}
-            logLine(v.id + ": upplåst");
           });
  
           keepAwake();
           goFullscreen();
  
-          // Namnge direkt vilken fil som inte går att läsa, istället för att
-          // felet dyker upp först när man skannar
           setTimeout(() => {
-            // Bara v.error är en pålitlig signal. networkState kan vara
-            // vilseledande medan filen fortfarande hämtas.
             const trasiga = allVideos.filter((v) => v.error);
             if (trasiga.length) {
               showToast("Dessa filer kan inte läsas i den här webbläsaren: " +
@@ -608,11 +549,6 @@
  
         const playVideo = (item) => {
           clearTimeout(item.timeout);
- 
-          // Egen flagga istället för att läsa av vid.paused. Videons
-          // paus-tillstånd hinner ändras av upplåsningen och av
-          // webbläsarens egna beslut, vilket gjorde att hela blocket
-          // ibland hoppades över.
           if (item.active) return;
           item.active = true;
           activeCount++;
@@ -680,7 +616,7 @@
           }
  
           item.timeout = setTimeout(() => {
-            if (item.active) return; // fotot hittades igen under tiden
+            if (item.active) return;
             item.vid.pause();
             if (item.faktaVidFile) item.faktaVidFile.pause();
             item.aVid.setAttribute("material", "opacity", 0);
@@ -703,7 +639,6 @@
           item.target.addEventListener("targetLost", () => pauseVideo(item));
         });
  
-        // Blockerades uppspelningen räcker det att trycka på skärmen
         window.addEventListener("pointerdown", () => {
           if (!pendingRetry) return;
           pendingRetry = false;
@@ -758,11 +693,16 @@
         <video id="vid1" src="video1.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
         <video id="vid2" src="video2.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
         <video id="vid3" src="video3.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+        <video id="vid4" src="video4.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+ 
+        <!-- Faktakorten. Ta bort loop om animationen ska spelas en gång. -->
         <video id="vid-fakta1" src="fakta1.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+        <video id="vid-fakta2" src="fakta2.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
       </a-assets>
  
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
  
+      <!-- Foto 1 -->
       <a-entity id="target1" mindar-image-target="targetIndex: 0" stabilizer>
         <a-entity id="wrap1">
           <a-video id="a-vid1" src="#vid1" position="0 0 0.04" width="1" height="0.628"
@@ -771,6 +711,7 @@
         </a-entity>
       </a-entity>
  
+      <!-- Foto 2 -->
       <a-entity id="target2" mindar-image-target="targetIndex: 1" stabilizer>
         <a-entity id="wrap2">
           <a-video id="a-vid2" src="#vid2" position="0 0 0.04" width="1" height="0.628"
@@ -779,25 +720,21 @@
         </a-entity>
       </a-entity>
  
+      <!--
+        Foto 3, med faktakort 1.
+        Kortet är 720 x 1508 px, alltså förhållandet 1 : 2,094.
+        Höjden följer fotot (0,628), vilket ger bredden
+        0,628 x 720 / 1508 = 0,30.
+        Byter du kortstorlek: kanten = bredd + 0.008 och höjd + 0.008,
+        skuggan = bredd + 0.08 och höjd + 0.09.
+      -->
       <a-entity id="target3" mindar-image-target="targetIndex: 2" stabilizer>
         <a-entity id="wrap3">
-          <!--
-            Kortet är 720 x 1508 px, alltså förhållandet 1 : 2,094.
-            Höjden hålls i linje med fotot (0,628), vilket ger bredden
-            0,628 x 720 / 1508 = 0,30.
- 
-            Byter du kortstorlek igen räknar du om så här:
-              bredd = 0.628 * (px_bredd / px_höjd)
-              kanten  = bredd + 0.008   och  höjd + 0.008
-              skuggan = bredd + 0.08    och  höjd + 0.09
-            Hörnradien lämnar du på 0.035 överallt — den anges i
-            världsenheter, så alla element får fysiskt lika stora hörn.
-          -->
-          <a-entity id="fakta-container" position="0 0 0.02">
-            <a-plane id="fakta-shadow" width="0.38" height="0.72" position="0.012 -0.016 -0.004"
+          <a-entity id="fakta-container1" position="0 0 0.02">
+            <a-plane id="fakta-shadow1" width="0.38" height="0.72" position="0.012 -0.016 -0.004"
                      soft-shadow rounded-corners="radius: 0.06"
                      material="shader: flat; color: #FFFFFF; opacity: 0; transparent: true; depthWrite: false"></a-plane>
-            <a-plane id="fakta-rim" width="0.308" height="0.636" position="0 0 -0.002"
+            <a-plane id="fakta-rim1" width="0.308" height="0.636" position="0 0 -0.002"
                      rounded-corners="radius: 0.039"
                      material="shader: flat; color: #C9BEA8; opacity: 0; transparent: true"></a-plane>
             <a-video id="a-fakta1" src="#vid-fakta1" width="0.30" height="0.628" position="0 0 0"
@@ -806,6 +743,27 @@
           </a-entity>
  
           <a-video id="a-vid3" src="#vid3" position="0 0 0.04" width="1" height="0.628"
+                   rounded-corners="radius: 0.035" sharp-texture
+                   material="shader: flat; opacity: 0; transparent: true"></a-video>
+        </a-entity>
+      </a-entity>
+ 
+      <!-- Foto 4, med faktakort 2 -->
+      <a-entity id="target4" mindar-image-target="targetIndex: 3" stabilizer>
+        <a-entity id="wrap4">
+          <a-entity id="fakta-container2" position="0 0 0.02">
+            <a-plane id="fakta-shadow2" width="0.38" height="0.72" position="0.012 -0.016 -0.004"
+                     soft-shadow rounded-corners="radius: 0.06"
+                     material="shader: flat; color: #FFFFFF; opacity: 0; transparent: true; depthWrite: false"></a-plane>
+            <a-plane id="fakta-rim2" width="0.308" height="0.636" position="0 0 -0.002"
+                     rounded-corners="radius: 0.039"
+                     material="shader: flat; color: #C9BEA8; opacity: 0; transparent: true"></a-plane>
+            <a-video id="a-fakta2" src="#vid-fakta2" width="0.30" height="0.628" position="0 0 0"
+                     rounded-corners="radius: 0.035" sharp-texture
+                     material="shader: flat; opacity: 0; transparent: true"></a-video>
+          </a-entity>
+ 
+          <a-video id="a-vid4" src="#vid4" position="0 0 0.04" width="1" height="0.628"
                    rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
