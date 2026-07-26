@@ -14,12 +14,8 @@
     <style>
       html, body { margin: 0; overflow: hidden; }
  
-      /* VIKTIGT för att kamerabilden ska synas:
-         MindAR lägger kameraströmmen i ett <video> med z-index: -2. Negativa
-         z-index målas FÖRE <body>s egen bakgrund, så en opak bakgrund på body
-         täcker hela kamerabilden. html-elementets bakgrund blir däremot sidans
-         "canvas background" och målas allra underst — därför sitter färgen
-         här och body hålls transparent. */
+      /* Kamerabilden ligger i ett <video> med z-index: -2. En opak bakgrund
+         på <body> målas ovanpå den. Färgen måste därför sitta på <html>. */
       html { background: #0a0a0a; }
       body { background: transparent; }
  
@@ -104,8 +100,7 @@
         },
  
         init: function () {
-          const o = this.el.object3D;
-          o.matrixAutoUpdate = false;
+          this.el.object3D.matrixAutoUpdate = false;
  
           this.sPos = new THREE.Vector3();
           this.sQuat = new THREE.Quaternion();
@@ -130,7 +125,6 @@
           if (!o.visible) { this.snap = true; return; }
           if (!dt) return;
  
-          // Läs bara in en NY rå pose från MindAR
           if (!this.hasWritten || !this.lastWritten.equals(o.matrix)) {
             o.matrix.decompose(this.tPos, this.tQuat, this.tScale);
             const s = (this.tScale.x + this.tScale.y + this.tScale.z) / 3;
@@ -167,101 +161,110 @@
  
       /* =====================================================================
          2. SKARP TEXTUR VID SNEDA VINKLAR (anisotrop filtrering)
+         Slutar polla så fort den lyckats — inga eviga timers.
       ===================================================================== */
       AFRAME.registerComponent("sharp-texture", {
         init: function () {
           const apply = () => {
             const mesh = this.el.getObject3D("mesh");
             const renderer = this.el.sceneEl && this.el.sceneEl.renderer;
-            if (!mesh || !mesh.material || !mesh.material.map || !renderer) return;
-            const max = renderer.capabilities.getMaxAnisotropy();
+            if (!mesh || !mesh.material || !mesh.material.map || !renderer) return false;
             const map = mesh.material.map;
-            if (map.anisotropy === max) return;
-            map.anisotropy = max;
-            map.minFilter = THREE.LinearFilter;
-            map.magFilter = THREE.LinearFilter;
-            map.generateMipmaps = false;
-            map.needsUpdate = true;
+            const max = renderer.capabilities.getMaxAnisotropy();
+            if (map.anisotropy !== max) {
+              map.anisotropy = max;
+              map.minFilter = THREE.LinearFilter;
+              map.magFilter = THREE.LinearFilter;
+              map.generateMipmaps = false;
+              map.needsUpdate = true;
+            }
+            return true;
           };
-          this.el.addEventListener("loaded", apply);
           this.el.addEventListener("materialtextureloaded", apply);
           this.checks = 0;
           this.interval = setInterval(() => {
-            apply();
-            if (++this.checks > 20) clearInterval(this.interval);
-          }, 500);
+            if (apply() || ++this.checks > 20) clearInterval(this.interval);
+          }, 400);
         },
         remove: function () { clearInterval(this.interval); }
       });
  
       /* =====================================================================
-         3. RUNDADE HÖRN — radien anges nu i VÄRLDSENHETER
+         3. RUNDADE HÖRN — nu i GEOMETRIN istället för som alfamask
  
-         Förra versionen byggde alltid en 1024×643-mask, vilket gav ovala
-         hörn på allt som inte hade exakt det bildförhållandet — därför fick
-         den smala faktarutan inga användbara hörn. Nu byggs masken efter
-         elementets faktiska proportioner, och radien anges i samma enhet
-         som width/height. Alla element får därmed FYSISKT lika stora hörn
-         oavsett form och storlek.
+         Varför den svarta faktarutan inte fick hörn förut:
+         den gamla lösningen la en alfamask på materialet. A-Frame skapar om
+         THREE-materialet när material-komponenten initieras klart (bl.a. när
+         shader byts till "flat"), och då följde masken inte med. <a-video>
+         klarade sig eftersom den lyssnade på "materialtextureloaded", som
+         infaller EFTER att materialet stabiliserats. Den svarta plattan har
+         ingen textur, så det eventet kom aldrig — masken hann skrivas över.
+ 
+         Nu formas hörnen i själva geometrin istället. Det är immunt mot
+         materialbyten, ger perfekta kanter även i sned vinkel, och tar bort
+         fyra 1024 px-texturer ur minnet.
       ===================================================================== */
+      function roundedRectGeometry(w, h, radius, segments) {
+        const r = Math.min(radius, Math.min(w, h) / 2);
+        const x = -w / 2, y = -h / 2;
+ 
+        const shape = new THREE.Shape();
+        shape.moveTo(x + r, y);
+        shape.lineTo(x + w - r, y);
+        shape.quadraticCurveTo(x + w, y, x + w, y + r);
+        shape.lineTo(x + w, y + h - r);
+        shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        shape.lineTo(x + r, y + h);
+        shape.quadraticCurveTo(x, y + h, x, y + h - r);
+        shape.lineTo(x, y + r);
+        shape.quadraticCurveTo(x, y, x + r, y);
+ 
+        const geo = new THREE.ShapeGeometry(shape, segments);
+ 
+        // ShapeGeometry sätter UV efter koordinater, inte 0–1. Räkna om så
+        // videon täcker hela rektangeln precis som på ett vanligt plan.
+        const pos = geo.attributes.position;
+        const uv = geo.attributes.uv;
+        for (let i = 0; i < pos.count; i++) {
+          uv.setXY(i, (pos.getX(i) - x) / w, (pos.getY(i) - y) / h);
+        }
+        uv.needsUpdate = true;
+        return geo;
+      }
+ 
       AFRAME.registerComponent("rounded-corners", {
-        schema: { radius: { default: 0.035 } },
+        schema: {
+          radius:   { default: 0.035 }, // i världsenheter — samma för alla element
+          segments: { default: 6 }      // punkter per hörn; 6 räcker gott
+        },
  
         init: function () {
-          this.build = this.build.bind(this);
-          this.cacheKey = null;
-          if (this.el.getObject3D("mesh")) this.build();
-          this.el.addEventListener("loaded", this.build);
-          this.el.addEventListener("materialtextureloaded", this.build);
-          // Bygg om masken om geometrin ändras (t.ex. av fit-to-video)
+          this.apply = this.apply.bind(this);
+          this.apply();
+          this.el.addEventListener("object3dset", this.apply);
           this.el.addEventListener("componentchanged", (e) => {
-            if (e.detail.name === "geometry") this.build();
+            if (e.detail.name === "geometry") this.apply();
           });
         },
  
-        build: function () {
+        apply: function () {
           const mesh = this.el.getObject3D("mesh");
-          if (!mesh || !mesh.material || !mesh.geometry) return;
+          if (!mesh || !mesh.geometry) return;
  
-          const p = mesh.geometry.parameters || {};
-          const wWorld = p.width || 1;
-          const hWorld = p.height || 1;
+          const p = mesh.geometry.parameters;
+          // Har geometrin width/height är den ett orört plan → runda den.
+          // Saknas de har vi redan bytt ut den, och då gör vi inget mer.
+          if (!p || typeof p.width !== "number") return;
  
-          const key = wWorld + "x" + hWorld + "x" + this.data.radius;
-          if (key === this.cacheKey) return;
-          this.cacheKey = key;
- 
-          // Skala så längsta sidan blir 1024 px — masken följer proportionerna
-          const ppu = 1024 / Math.max(wWorld, hWorld);
-          const w = Math.round(wWorld * ppu);
-          const h = Math.round(hWorld * ppu);
-          const r = Math.min(this.data.radius * ppu, Math.min(w, h) / 2);
- 
-          const c = document.createElement("canvas");
-          c.width = w; c.height = h;
-          const ctx = c.getContext("2d");
-          ctx.fillStyle = "#fff";
-          ctx.beginPath();
-          ctx.moveTo(r, 0);
-          ctx.arcTo(w, 0, w, h, r);
-          ctx.arcTo(w, h, 0, h, r);
-          ctx.arcTo(0, h, 0, 0, r);
-          ctx.arcTo(0, 0, w, 0, r);
-          ctx.closePath();
-          ctx.fill();
- 
-          if (mesh.material.alphaMap) mesh.material.alphaMap.dispose();
-          mesh.material.alphaMap = new THREE.CanvasTexture(c);
-          mesh.material.transparent = true;
-          mesh.material.needsUpdate = true;
+          const geo = roundedRectGeometry(p.width, p.height, this.data.radius, this.data.segments);
+          mesh.geometry.dispose();
+          mesh.geometry = geo;
         }
       });
  
       /* =====================================================================
          4. VALFRITT: anpassa planets höjd efter videons bildförhållande.
-         Lägg till fit-to-video="src: #vid1" på ett <a-video> om videon inte
-         har samma proportioner som det tryckta fotot. Utelämna attributet
-         om videon redan är filmad för att täcka fotot exakt.
+         Lägg till fit-to-video="src: #vid1" på ett <a-video> vid behov.
       ===================================================================== */
       AFRAME.registerComponent("fit-to-video", {
         schema: { src: { type: "selector" } },
@@ -286,6 +289,14 @@
         const startError = document.querySelector("#start-error");
         const scanUi = document.querySelector("#scan-ui");
  
+        /* Tidslinje för faktarutan. Panelen ligger gömd bakom videon tills
+           videon är helt synlig — annars skiner den igenom den halvtonade
+           videon och ser ut att sväva framför istället för bakom. */
+        const T_VIDEO_FADE   = 600;  // videon tonar in
+        const T_PANEL_FADE   = 550;  // panelen tonar in, fortfarande dold bakom
+        const T_PANEL_SLIDE  = 750;  // panelen glider ut åt höger
+        const PANEL_X        = 0.75; // slutposition i sidled
+ 
         const targets = [
           { target: document.querySelector("#target1"), wrapper: document.querySelector("#wrap1"),
             vid: document.querySelector("#vid1"), aVid: document.querySelector("#a-vid1") },
@@ -299,7 +310,8 @@
             faktaVidFile: document.querySelector("#vid-fakta1") }
         ];
  
-        /* --- Håll skärmen tänd medan man bläddrar i albumet --- */
+        const PANEL_HOME = "0 0 0.02";
+ 
         let wakeLock = null;
         const keepAwake = async () => {
           try {
@@ -350,17 +362,28 @@
             item.vid.play().catch(() => {});
  
             item.wrapper.removeAttribute("animation__scale");
-            item.wrapper.setAttribute("animation__scale", "property: scale; from: 0.93 0.93 0.93; to: 1 1 1; dur: 650; easing: easeOutQuint");
+            item.wrapper.setAttribute("animation__scale",
+              "property: scale; from: 0.93 0.93 0.93; to: 1 1 1; dur: 650; easing: easeOutQuint");
  
             item.aVid.removeAttribute("animation__fade");
-            item.aVid.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 1; dur: 600; easing: easeOutQuad");
+            item.aVid.setAttribute("animation__fade",
+              "property: material.opacity; from: 0; to: 1; dur: " + T_VIDEO_FADE + "; easing: easeOutQuad");
  
             if (item.faktaContainer) {
               item.faktaVidFile.currentTime = 0;
               item.faktaVidFile.play().catch(() => {});
-              item.faktaBg.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 0.6; dur: 800; delay: 300; easing: easeOutQuad");
-              item.faktaVidEl.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 1; dur: 800; delay: 300; easing: easeOutQuad");
-              item.faktaContainer.setAttribute("animation__slide", "property: position; from: 0 0 0.015; to: 0.75 0 0.015; dur: 800; delay: 300; easing: easeOutQuint");
+ 
+              // Steg 1: panelen blir synlig medan den fortfarande är helt
+              // dold bakom videon.
+              item.faktaBg.setAttribute("animation__fade",
+                "property: material.opacity; from: 0; to: 0.62; dur: 300; delay: " + T_PANEL_FADE + "; easing: linear");
+              item.faktaVidEl.setAttribute("animation__fade",
+                "property: material.opacity; from: 0; to: 1; dur: 300; delay: " + T_PANEL_FADE + "; easing: linear");
+ 
+              // Steg 2: den glider ut åt höger, bakom videons högerkant.
+              item.faktaContainer.setAttribute("animation__slide",
+                "property: position; from: " + PANEL_HOME + "; to: " + PANEL_X + " 0 0.02; " +
+                "dur: " + T_PANEL_SLIDE + "; delay: " + (T_PANEL_FADE + 150) + "; easing: easeOutQuint");
             }
  
             item.vol = 0;
@@ -383,7 +406,21 @@
           }, 25);
  
           item.aVid.removeAttribute("animation__fade");
-          item.aVid.setAttribute("animation__fade", "property: material.opacity; to: 0; dur: 350; easing: easeInQuad");
+          item.aVid.setAttribute("animation__fade",
+            "property: material.opacity; to: 0; dur: 350; easing: easeInQuad");
+ 
+          if (item.faktaContainer) {
+            // Panelen glider tillbaka in bakom videon innan allt nollställs
+            item.faktaContainer.removeAttribute("animation__slide");
+            item.faktaContainer.setAttribute("animation__slide",
+              "property: position; to: " + PANEL_HOME + "; dur: 300; easing: easeInQuad");
+            item.faktaBg.removeAttribute("animation__fade");
+            item.faktaVidEl.removeAttribute("animation__fade");
+            item.faktaBg.setAttribute("animation__fade",
+              "property: material.opacity; to: 0; dur: 300; easing: easeInQuad");
+            item.faktaVidEl.setAttribute("animation__fade",
+              "property: material.opacity; to: 0; dur: 300; easing: easeInQuad");
+          }
  
           item.timeout = setTimeout(() => {
             item.vid.pause();
@@ -398,7 +435,7 @@
               item.faktaContainer.removeAttribute("animation__slide");
               item.faktaBg.setAttribute("material", "opacity", 0);
               item.faktaVidEl.setAttribute("material", "opacity", 0);
-              item.faktaContainer.setAttribute("position", "0 0 0.015");
+              item.faktaContainer.setAttribute("position", PANEL_HOME);
             }
           }, 400);
         };
@@ -408,7 +445,6 @@
           item.target.addEventListener("targetLost", () => pauseVideo(item));
         });
  
-        /* --- Byter man flik eller låser telefonen ska inget ljud fortsätta --- */
         document.addEventListener("visibilitychange", () => {
           if (document.hidden) {
             targets.forEach((i) => {
@@ -442,10 +478,13 @@
       <p>Rikta kameran mot ett foto</p>
     </div>
  
+    <!-- physicallyCorrectLights borttaget: scenen har inga ljuskällor
+         (allt använder shader: flat), så inställningen kostade utan att
+         påverka något. -->
     <a-scene
       mindar-image="imageTargetSrc: target.mind; autoStart: no; filterMinCF: 0.001; filterBeta: 1000; missTolerance: 10; warmupTolerance: 5; uiLoading: no; uiScanning: no;"
       color-space="sRGB"
-      renderer="colorManagement: true; physicallyCorrectLights: true; antialias: true; precision: high"
+      renderer="colorManagement: true; antialias: true"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
     >
@@ -461,7 +500,7 @@
       <!-- Bild 1 -->
       <a-entity id="target1" mindar-image-target="targetIndex: 0" stabilizer>
         <a-entity id="wrap1">
-          <a-video id="a-vid1" src="#vid1" position="0 0 0.035" width="1" height="0.628"
+          <a-video id="a-vid1" src="#vid1" position="0 0 0.04" width="1" height="0.628"
                    rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
@@ -470,7 +509,7 @@
       <!-- Bild 2 -->
       <a-entity id="target2" mindar-image-target="targetIndex: 1" stabilizer>
         <a-entity id="wrap2">
-          <a-video id="a-vid2" src="#vid2" position="0 0 0.035" width="1" height="0.628"
+          <a-video id="a-vid2" src="#vid2" position="0 0 0.04" width="1" height="0.628"
                    rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
@@ -480,18 +519,20 @@
       <a-entity id="target3" mindar-image-target="targetIndex: 2" stabilizer>
         <a-entity id="wrap3">
  
-          <!-- Faktarutan har nu samma hörnradie som huvudvideon. Radien är
-               angiven i världsenheter, så hörnen blir fysiskt lika stora
-               trots att panelen är mycket smalare. -->
-          <a-entity id="fakta-container" position="0 0 0.015">
+          <!-- Panelen ligger på z 0.02, videon på 0.04. Den startar centrerad
+               i x = 0 och är då helt dold bakom den 1.0 breda videon
+               (panelen spänner -0.225 till 0.225). Vid x = 0.75 hamnar den
+               strax utanför videons högerkant. -->
+          <a-entity id="fakta-container" position="0 0 0.02">
             <a-plane id="fakta-bg" width="0.45" height="0.628" color="#000000"
                      rounded-corners="radius: 0.035"
                      material="shader: flat; opacity: 0; transparent: true"></a-plane>
             <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0.005"
-                     sharp-texture material="shader: flat; opacity: 0; transparent: true"></a-video>
+                     rounded-corners="radius: 0.035" sharp-texture
+                     material="shader: flat; opacity: 0; transparent: true"></a-video>
           </a-entity>
  
-          <a-video id="a-vid3" src="#vid3" position="0 0 0.035" width="1" height="0.628"
+          <a-video id="a-vid3" src="#vid3" position="0 0 0.04" width="1" height="0.628"
                    rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
@@ -499,3 +540,4 @@
     </a-scene>
   </body>
 </html>
+ 
