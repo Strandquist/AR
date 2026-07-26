@@ -245,27 +245,55 @@
  
       /* =====================================================================
          4. MJUK SKUGGA
+ 
+         Bygger sin textur efter elementets faktiska proportioner, så den
+         fungerar för vilken kortstorlek som helst utan att hörnen dras ut
+         till ovaler. Alla mått anges i världsenheter, samma som width/height.
       ===================================================================== */
       AFRAME.registerComponent("soft-shadow", {
-        schema: { blur: { default: 34 }, inset: { default: 46 } },
+        schema: {
+          inset:  { default: 0.045 },  // hur långt in den mörka ytan börjar
+          blur:   { default: 0.035 },  // suddighetens bredd
+          radius: { default: 0.05 }    // hörnradie
+        },
         init: function () {
-          const W = 512, H = 700, m = this.data.inset;
+          const w = parseFloat(this.el.getAttribute("width"));
+          const h = parseFloat(this.el.getAttribute("height"));
+          if (!w || !h) return;
+ 
+          const ppu = 700 / Math.max(w, h);          // pixlar per världsenhet
+          const W = Math.round(w * ppu);
+          const H = Math.round(h * ppu);
+          const m = this.data.inset * ppu;
+          const r = Math.max(1, this.data.radius * ppu);
+          const b = this.data.blur * ppu;
+ 
+          const rw = W - m * 2, rh = H - m * 2;
+          if (rw <= 0 || rh <= 0) return;
+ 
           const c = document.createElement("canvas");
           c.width = W; c.height = H;
           const ctx = c.getContext("2d");
           ctx.fillStyle = "#000";
-          if ("filter" in ctx) ctx.filter = "blur(" + this.data.blur + "px)";
-          if (ctx.roundRect) {
-            ctx.beginPath();
-            ctx.roundRect(m, m, W - m * 2, H - m * 2, 40);
-            ctx.fill();
+ 
+          if ("filter" in ctx) {
+            ctx.filter = "blur(" + b + "px)";
+            if (ctx.roundRect) {
+              ctx.beginPath();
+              ctx.roundRect(m, m, rw, rh, r);
+              ctx.fill();
+            } else {
+              ctx.fillRect(m, m, rw, rh);
+            }
           } else {
+            // Fallback för äldre webbläsare utan ctx.filter
             for (let i = 0; i < 14; i++) {
               ctx.fillStyle = "rgba(0,0,0,0.08)";
-              const p = m - i * 3;
+              const p = Math.max(0, m - i * (b / 8));
               ctx.fillRect(p, p, W - p * 2, H - p * 2);
             }
           }
+ 
           this.el.setAttribute("material", "src", c.toDataURL());
         }
       });
@@ -461,7 +489,9 @@
         const T_VIDEO_FADE  = 600;
         const T_PANEL_FADE  = 550;
         const T_PANEL_SLIDE = 750;
-        const PANEL_X       = 0.75;
+        // Fotot slutar vid x = 0.5. Kortet är 0.30 brett, så mitten hamnar
+        // vid 0.5 + 0.03 (mellanrum) + 0.15 (halva kortet) = 0.68.
+        const PANEL_X       = 0.68;
         const PANEL_HOME    = "0 0 0.02";
  
         const targets = [
@@ -722,19 +752,27 @@
  
       <a-entity id="target3" mindar-image-target="targetIndex: 2" stabilizer>
         <a-entity id="wrap3">
+          <!--
+            Kortet är 720 x 1508 px, alltså förhållandet 1 : 2,094.
+            Höjden hålls i linje med fotot (0,628), vilket ger bredden
+            0,628 x 720 / 1508 = 0,30.
+ 
+            Byter du kortstorlek igen räknar du om så här:
+              bredd = 0.628 * (px_bredd / px_höjd)
+              kanten  = bredd + 0.008   och  höjd + 0.008
+              skuggan = bredd + 0.08    och  höjd + 0.09
+            Hörnradien lämnar du på 0.035 överallt — den anges i
+            världsenheter, så alla element får fysiskt lika stora hörn.
+          -->
           <a-entity id="fakta-container" position="0 0 0.02">
-            <a-plane id="fakta-shadow" width="0.53" height="0.72" position="0.012 -0.016 -0.004"
+            <a-plane id="fakta-shadow" width="0.38" height="0.72" position="0.012 -0.016 -0.004"
                      soft-shadow rounded-corners="radius: 0.06"
                      material="shader: flat; color: #FFFFFF; opacity: 0; transparent: true; depthWrite: false"></a-plane>
-            <a-plane id="fakta-rim" width="0.458" height="0.636" position="0 0 -0.002"
+            <a-plane id="fakta-rim" width="0.308" height="0.636" position="0 0 -0.002"
                      rounded-corners="radius: 0.039"
                      material="shader: flat; color: #C9BEA8; opacity: 0; transparent: true"></a-plane>
-            <!-- Har din DaVinci-fil svarta kanter runt kortet: ställ in
-                 utsnittet här, t.ex. crop-texture="x: 0.24; w: 0.52"
-                 Standardvärdena nedan visar hela bildrutan oförändrad. -->
-            <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0"
+            <a-video id="a-fakta1" src="#vid-fakta1" width="0.30" height="0.628" position="0 0 0"
                      rounded-corners="radius: 0.035" sharp-texture
-                     crop-texture="x: 0; y: 0; w: 1; h: 1"
                      material="shader: flat; opacity: 0; transparent: true"></a-video>
           </a-entity>
  
