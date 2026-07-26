@@ -382,6 +382,11 @@
         };
         let toastTimer = null;
         const showToast = (msg) => {
+          // Felrutan visas bara med ?debug i adressen. Utan den loggas
+          // problemet tyst — appen ska inte skrämma en besökare med
+          // tekniska meddelanden när uppspelningen ändå fungerar.
+          logLine("TOAST: " + msg);
+          if (!DEBUG) return;
           toast.textContent = msg;
           toast.classList.add("visible");
           clearTimeout(toastTimer);
@@ -468,18 +473,27 @@
             }).catch((e) => {
               if (e.name === "AbortError") return;
               logLine("play() nekad " + v.id + ": " + e.name);
-              let hint;
-              if (e.name === "NotSupportedError") {
-                // Filen gick inte att läsa eller avkoda alls
-                hint = "filen kan inte avkodas här. Exportera om som H.264, 8-bitars, 4:2:0.";
-              } else if (e.name === "NotAllowedError") {
-                // Webbläsaren blockerade uppspelningen
-                hint = "webbläsaren blockerade uppspelningen. Tryck på skärmen och skanna igen.";
-                pendingRetry = true;
-              } else {
-                hint = "okänt fel.";
-              }
-              showToast(v.id + " – " + e.name + ": " + hint);
+ 
+              // Chrome avvisar ibland ett anrop som ändå lyckas strax
+              // efteråt. Kolla först om videon faktiskt rullar innan vi
+              // rapporterar något.
+              setTimeout(() => {
+                if (!v.paused && v.currentTime > 0) {
+                  logLine(v.id + ": spelar ändå, ignorerar felet");
+                  if (withSound && v.muted) fadeSoundIn(v);
+                  return;
+                }
+                let hint;
+                if (e.name === "NotSupportedError") {
+                  hint = "filen kan inte avkodas här. Exportera om som H.264, 8-bitars, 4:2:0.";
+                } else if (e.name === "NotAllowedError") {
+                  hint = "webbläsaren blockerade uppspelningen. Tryck på skärmen och skanna igen.";
+                  pendingRetry = true;
+                } else {
+                  hint = "okänt fel.";
+                }
+                showToast(v.id + " – " + e.name + ": " + hint);
+              }, 700);
             });
           } else if (withSound) {
             fadeSoundIn(v);
@@ -487,8 +501,14 @@
         };
  
         const T_VIDEO_FADE  = 600;
-        const T_PANEL_FADE  = 550;
-        const T_PANEL_SLIDE = 750;
+        const T_PANEL_FADE  = 550;   // när kortet tonar in, dolt bakom videon
+        const T_PANEL_SLIDE = 750;   // hur länge utglidningen tar
+ 
+        // Faktavideon startar först när kortet är framme, plus en liten
+        // paus. Tidigare rullade den redan under utglidningen, så en
+        // animation gjord i DaVinci hann nästan ta slut innan kortet syntes.
+        // Höj sista talet om du vill ha en längre paus innan den börjar.
+        const T_FAKTA_START = T_PANEL_FADE + 150 + T_PANEL_SLIDE + 250;
         // Fotot slutar vid x = 0.5. Kortet är 0.30 brett, så mitten hamnar
         // vid 0.5 + 0.03 (mellanrum) + 0.15 (halva kortet) = 0.68.
         const PANEL_X       = 0.68;
@@ -550,9 +570,9 @@
           // Namnge direkt vilken fil som inte går att läsa, istället för att
           // felet dyker upp först när man skannar
           setTimeout(() => {
-            const trasiga = allVideos.filter(
-              (v) => v.error || v.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
-            );
+            // Bara v.error är en pålitlig signal. networkState kan vara
+            // vilseledande medan filen fortfarande hämtas.
+            const trasiga = allVideos.filter((v) => v.error);
             if (trasiga.length) {
               showToast("Dessa filer kan inte läsas i den här webbläsaren: " +
                         trasiga.map((v) => v.getAttribute("src")).join(", ") +
@@ -601,7 +621,15 @@
           if (navigator.vibrate) navigator.vibrate(12);
  
           startMedia(item.vid, true);
-          startMedia(item.faktaVidFile, false);
+ 
+          // Faktavideon väntar tills kortet glidit fram
+          clearTimeout(item.faktaTimer);
+          if (item.faktaVidFile) {
+            try { item.faktaVidFile.currentTime = 0; } catch (e) {}
+            item.faktaTimer = setTimeout(() => {
+              if (item.active) startMedia(item.faktaVidFile, false);
+            }, T_FAKTA_START);
+          }
  
           item.wrapper.removeAttribute("animation__scale");
           item.wrapper.setAttribute("animation__scale",
@@ -629,6 +657,7 @@
         const pauseVideo = (item) => {
           if (!item.active) return;
           item.active = false;
+          clearTimeout(item.faktaTimer);
           activeCount = Math.max(0, activeCount - 1);
           updateScanUi();
  
