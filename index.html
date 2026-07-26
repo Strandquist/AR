@@ -329,6 +329,58 @@
             ] }
         ];
  
+        /* =================================================================
+           FELSÖKNING
+           Lägg till ?debug i adressen, t.ex.
+             https://dittnamn.github.io/album/?debug
+           så visas en panel med varje videos tillstånd och alla fel.
+        ================================================================= */
+        const DEBUG = new URLSearchParams(location.search).has("debug");
+        const allVideos = Array.from(document.querySelectorAll("a-assets video"));
+        let panel = null, logEl = null;
+ 
+        if (DEBUG) {
+          panel = document.createElement("div");
+          panel.style.cssText =
+            "position:fixed;left:8px;bottom:8px;right:8px;z-index:11000;" +
+            "font:11px/1.45 ui-monospace,Menlo,monospace;color:#d8ffd8;" +
+            "background:rgba(0,0,0,0.82);padding:10px 12px;border-radius:8px;" +
+            "max-height:44vh;overflow:auto;white-space:pre-wrap;pointer-events:none";
+          document.body.appendChild(panel);
+          logEl = document.createElement("div");
+          logEl.style.cssText = "margin-top:8px;color:#ffd9a8";
+        }
+ 
+        const logLine = (msg) => {
+          if (!DEBUG) return;
+          const t = new Date().toLocaleTimeString("sv-SE");
+          logEl.textContent = (t + "  " + msg + "\n" + logEl.textContent).slice(0, 1200);
+        };
+ 
+        // Rapportera trasiga filnamn direkt — 404 eller fel versaler syns här
+        allVideos.forEach((v) => {
+          v.addEventListener("error", () => {
+            const codes = { 1: "avbruten", 2: "nätverksfel", 3: "avkodningsfel", 4: "HITTAS EJ / format stöds ej" };
+            logLine("FEL " + v.id + " (" + v.getAttribute("src") + "): " +
+                    (v.error ? codes[v.error.code] || v.error.code : "okänt"));
+          });
+        });
+ 
+        if (DEBUG) {
+          setInterval(() => {
+            const rows = allVideos.map((v) => {
+              const st = ["inget", "metadata", "aktuell data", "framtida data", "klar"][v.readyState];
+              return v.id.padEnd(11) +
+                     (v.paused ? "PAUSAD " : "spelar ") +
+                     "rs=" + st.padEnd(13) +
+                     "t=" + v.currentTime.toFixed(1) +
+                     (v.muted ? " mutad" : "");
+            });
+            panel.textContent = rows.join("\n");
+            panel.appendChild(logEl);
+          }, 400);
+        }
+ 
         let wakeLock = null;
         const keepAwake = async () => {
           try {
@@ -341,13 +393,34 @@
           const fn = el.requestFullscreen || el.webkitRequestFullscreen;
           // iOS Safari saknar detta API. Där får man samma effekt genom att
           // lägga sidan på hemskärmen.
-          if (fn) { try { fn.call(el); } catch (e) {} }
+          if (!fn) return;
+          try {
+            const p = fn.call(el);
+            if (p && p.catch) p.catch((e) => logLine("fullskärm nekad: " + e.name));
+          } catch (e) { logLine("fullskärm fel: " + e.name); }
         };
  
         startBtn.addEventListener("click", async () => {
           startBtn.disabled = true;
           startBtn.textContent = "Startar kameran…";
-          targets.forEach((i) => (i.vid.muted = false));
+          // VIKTIGT: Safari kräver att varje videoelement har spelats en gång
+          // under en användargest för att få spelas programmatiskt senare.
+          // Vi startar och pausar alla direkt här, medan trycket räknas.
+          allVideos.forEach((v) => {
+            v.muted = true;
+            const p = v.play();
+            if (p && p.then) {
+              p.then(() => {
+                v.pause();
+                v.currentTime = 0;
+                v.muted = false;
+                logLine(v.id + ": upplåst");
+              }).catch((e) => {
+                logLine(v.id + ": kunde inte låsas upp — " + e.name);
+              });
+            }
+          });
+ 
           keepAwake();
           goFullscreen();
           try {
@@ -387,7 +460,7 @@
  
             item.vid.currentTime = 0;
             item.vid.volume = 0;
-            item.vid.play().catch(() => {});
+            item.vid.play().catch((e) => logLine("play() nekad för " + item.vid.id + " — " + e.name + ": " + e.message));
  
             item.wrapper.removeAttribute("animation__scale");
             item.wrapper.setAttribute("animation__scale",
@@ -398,8 +471,11 @@
               "property: material.opacity; from: 0; to: 1; dur: " + T_VIDEO_FADE + "; easing: easeOutQuad");
  
             if (item.faktaContainer) {
-              item.faktaVidFile.currentTime = 0;
-              item.faktaVidFile.play().catch(() => {});
+              if (item.faktaVidFile) {
+                item.faktaVidFile.currentTime = 0;
+                item.faktaVidFile.play().catch((e) =>
+                  logLine("play() nekad för faktavideon — " + e.name + ": " + e.message));
+              }
  
               // Steg 1: kortet blir synligt medan det ännu är dolt bakom videon
               item.faktaLayers.forEach((l) => {
@@ -486,7 +562,7 @@
             keepAwake();
             targets.forEach((i) => {
               if (i.target.object3D.visible) {
-                i.vid.play().catch(() => {});
+                i.vid.play().catch((e) => logLine("återuppta nekad " + i.vid.id + ": " + e.name));
                 if (i.faktaVidFile) i.faktaVidFile.play().catch(() => {});
               }
             });
