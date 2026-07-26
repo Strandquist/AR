@@ -15,13 +15,11 @@
       html, body { margin: 0; overflow: hidden; }
  
       /* VIKTIGT för att kamerabilden ska synas:
-         MindAR lägger kameraströmmen i ett <video> med z-index: -2. Ett
-         negativt z-index målas FÖRE <body>s egen bakgrund, så en opak
-         bakgrund på body täcker över hela kamerabilden — allt blir svart
-         utom det A-Frame ritar i sin canvas.
-         html-elementets bakgrund blir däremot sidans "canvas background"
-         och målas allra underst, under kameravideon. Därför sitter
-         färgen här och body hålls transparent. */
+         MindAR lägger kameraströmmen i ett <video> med z-index: -2. Negativa
+         z-index målas FÖRE <body>s egen bakgrund, så en opak bakgrund på body
+         täcker hela kamerabilden. html-elementets bakgrund blir däremot sidans
+         "canvas background" och målas allra underst — därför sitter färgen
+         här och body hålls transparent. */
       html { background: #0a0a0a; }
       body { background: transparent; }
  
@@ -95,34 +93,18 @@
  
     <script>
       /* =====================================================================
-         1. STABILISATOR — nu vinkelmedveten
- 
-         Videon följer redan bildens perspektiv automatiskt: MindAR skattar
-         en full 3D-pose (position + rotation + skala) för fotot, och
-         videoplanet ärver den. Problemet vid sneda vinklar är inte att
-         perspektivet saknas, utan att POSE-SKATTNINGEN blir brusigare ju
-         snedare du tittar — färre särdrag syns och djupet blir osäkert.
- 
-         Tre förbättringar mot förra versionen:
-         a) Bugg fixad: förut kunde komponenten läsa in sitt EGET utjämnade
-            värde som nytt mål när MindAR inte hunnit uppdatera, vilket
-            bromsade in rörelsen felaktigt. Nu jämförs matrisen mot den vi
-            själva skrev senast.
-         b) Separata tidskonstanter: djup/skala är brusigast och jämnas ut
-            hårdast, rotationen minst så att den känns responsiv.
-         c) Adaptiv utjämning: ju snedare vinkel, desto hårdare filtrering.
+         1. STABILISATOR — vinkelmedveten utjämning av MindAR:s pose
       ===================================================================== */
       AFRAME.registerComponent("stabilizer", {
         schema: {
-          posTau:   { default: 0.07 },  // sidled/höjdled
-          rotTau:   { default: 0.05 },  // rotation – mest responsiv
-          scaleTau: { default: 0.16 },  // djup/storlek – brusigast, mest utjämnad
-          obliqueBoost: { default: 2.5 } // extra utjämning vid sneda vinklar
+          posTau:   { default: 0.07 },
+          rotTau:   { default: 0.05 },
+          scaleTau: { default: 0.16 },
+          obliqueBoost: { default: 2.5 }
         },
  
         init: function () {
           const o = this.el.object3D;
-          // Se till att three.js inte räknar om matrisen och skriver över oss
           o.matrixAutoUpdate = false;
  
           this.sPos = new THREE.Vector3();
@@ -139,7 +121,6 @@
  
           this.normal = new THREE.Vector3();
           this.toCam = new THREE.Vector3();
-          this.obliqueness = 0; // 0 = rakt framifrån, 1 = extremt snett
  
           this.el.addEventListener("targetFound", () => { this.snap = true; });
         },
@@ -149,14 +130,9 @@
           if (!o.visible) { this.snap = true; return; }
           if (!dt) return;
  
-          // Läs bara in en NY rå pose från MindAR. Om matrisen är identisk med
-          // den vi själva skrev förra bildrutan har ingen ny mätning kommit in,
-          // och då behåller vi föregående mål.
+          // Läs bara in en NY rå pose från MindAR
           if (!this.hasWritten || !this.lastWritten.equals(o.matrix)) {
             o.matrix.decompose(this.tPos, this.tQuat, this.tScale);
-            // Tvinga enhetlig skala. Homografi-skattningen ger ofta lite
-            // olika skala i x/y/z, vilket syns som att bilden "skjuvas"
-            // eller vrider sig lite fel just vid sneda vinklar.
             const s = (this.tScale.x + this.tScale.y + this.tScale.z) / 3;
             this.tScale.set(s, s, s);
           }
@@ -167,16 +143,12 @@
             this.sScale.copy(this.tScale);
             this.snap = false;
           } else {
-            // Hur snett ser vi på fotot? Kameran står i origo i MindAR,
-            // så riktningen till kameran är helt enkelt -position.
             this.normal.set(0, 0, 1).applyQuaternion(this.tQuat);
             this.toCam.copy(this.tPos).normalize().negate();
-            const facing = Math.abs(this.normal.dot(this.toCam)); // 1 = rakt framifrån
-            this.obliqueness = Math.min(1, Math.max(0, 1 - facing));
+            const facing = Math.abs(this.normal.dot(this.toCam));
+            const oblique = Math.min(1, Math.max(0, 1 - facing));
  
-            // Kvadrerat så att nästan raka vinklar förblir snabba och
-            // bara riktigt sneda vinklar får den tunga filtreringen.
-            const k = 1 + this.data.obliqueBoost * this.obliqueness * this.obliqueness;
+            const k = 1 + this.data.obliqueBoost * oblique * oblique;
             const secs = dt / 1000;
             const alpha = (tau) => 1 - Math.exp(-secs / (tau * k));
  
@@ -194,10 +166,7 @@
       });
  
       /* =====================================================================
-         2. SKARP TEXTUR VID SNEDA VINKLAR
-         När en yta ses från sidan samplas texturen längs en utdragen axel.
-         Utan anisotrop filtrering blir videon suddig och "kammig" just då.
-         Vi slår på maximal anisotropi som hårdvaran klarar.
+         2. SKARP TEXTUR VID SNEDA VINKLAR (anisotrop filtrering)
       ===================================================================== */
       AFRAME.registerComponent("sharp-texture", {
         init: function () {
@@ -214,10 +183,8 @@
             map.generateMipmaps = false;
             map.needsUpdate = true;
           };
-          this.apply = apply;
           this.el.addEventListener("loaded", apply);
           this.el.addEventListener("materialtextureloaded", apply);
-          // Videotexturen byts ibland ut efter start – kolla några gånger
           this.checks = 0;
           this.interval = setInterval(() => {
             apply();
@@ -228,84 +195,86 @@
       });
  
       /* =====================================================================
-         3. RUNDADE HÖRN via alfamask
+         3. RUNDADE HÖRN — radien anges nu i VÄRLDSENHETER
+ 
+         Förra versionen byggde alltid en 1024×643-mask, vilket gav ovala
+         hörn på allt som inte hade exakt det bildförhållandet — därför fick
+         den smala faktarutan inga användbara hörn. Nu byggs masken efter
+         elementets faktiska proportioner, och radien anges i samma enhet
+         som width/height. Alla element får därmed FYSISKT lika stora hörn
+         oavsett form och storlek.
       ===================================================================== */
       AFRAME.registerComponent("rounded-corners", {
-        schema: { radius: { default: 0.045 } },
+        schema: { radius: { default: 0.035 } },
+ 
         init: function () {
-          const apply = () => {
-            const mesh = this.el.getObject3D("mesh");
-            if (!mesh || !mesh.material || mesh.material.alphaMap) return;
+          this.build = this.build.bind(this);
+          this.cacheKey = null;
+          if (this.el.getObject3D("mesh")) this.build();
+          this.el.addEventListener("loaded", this.build);
+          this.el.addEventListener("materialtextureloaded", this.build);
+          // Bygg om masken om geometrin ändras (t.ex. av fit-to-video)
+          this.el.addEventListener("componentchanged", (e) => {
+            if (e.detail.name === "geometry") this.build();
+          });
+        },
  
-            const w = 1024, h = 643;
-            const r = this.data.radius * w;
-            const c = document.createElement("canvas");
-            c.width = w; c.height = h;
-            const ctx = c.getContext("2d");
-            ctx.fillStyle = "#fff";
-            ctx.beginPath();
-            ctx.moveTo(r, 0);
-            ctx.arcTo(w, 0, w, h, r);
-            ctx.arcTo(w, h, 0, h, r);
-            ctx.arcTo(0, h, 0, 0, r);
-            ctx.arcTo(0, 0, w, 0, r);
-            ctx.closePath();
-            ctx.fill();
+        build: function () {
+          const mesh = this.el.getObject3D("mesh");
+          if (!mesh || !mesh.material || !mesh.geometry) return;
  
-            mesh.material.alphaMap = new THREE.CanvasTexture(c);
-            mesh.material.transparent = true;
-            mesh.material.needsUpdate = true;
-          };
-          if (this.el.getObject3D("mesh")) apply();
-          this.el.addEventListener("loaded", apply);
-          this.el.addEventListener("materialtextureloaded", apply);
+          const p = mesh.geometry.parameters || {};
+          const wWorld = p.width || 1;
+          const hWorld = p.height || 1;
+ 
+          const key = wWorld + "x" + hWorld + "x" + this.data.radius;
+          if (key === this.cacheKey) return;
+          this.cacheKey = key;
+ 
+          // Skala så längsta sidan blir 1024 px — masken följer proportionerna
+          const ppu = 1024 / Math.max(wWorld, hWorld);
+          const w = Math.round(wWorld * ppu);
+          const h = Math.round(hWorld * ppu);
+          const r = Math.min(this.data.radius * ppu, Math.min(w, h) / 2);
+ 
+          const c = document.createElement("canvas");
+          c.width = w; c.height = h;
+          const ctx = c.getContext("2d");
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.moveTo(r, 0);
+          ctx.arcTo(w, 0, w, h, r);
+          ctx.arcTo(w, h, 0, h, r);
+          ctx.arcTo(0, h, 0, 0, r);
+          ctx.arcTo(0, 0, w, 0, r);
+          ctx.closePath();
+          ctx.fill();
+ 
+          if (mesh.material.alphaMap) mesh.material.alphaMap.dispose();
+          mesh.material.alphaMap = new THREE.CanvasTexture(c);
+          mesh.material.transparent = true;
+          mesh.material.needsUpdate = true;
         }
       });
  
       /* =====================================================================
-         4. MJUK SKUGGA
-         Skuggan ligger PÅ sidan (z = 0) medan videon svävar ovanför
-         (z = 0.035). Eftersom de ligger på olika djup skapar perspektivet
-         parallaxen helt av sig självt när du lutar telefonen — precis som
-         ett fysiskt kort som ligger och skuggar mot pappret.
+         4. VALFRITT: anpassa planets höjd efter videons bildförhållande.
+         Lägg till fit-to-video="src: #vid1" på ett <a-video> om videon inte
+         har samma proportioner som det tryckta fotot. Utelämna attributet
+         om videon redan är filmad för att täcka fotot exakt.
       ===================================================================== */
-      AFRAME.registerComponent("soft-shadow", {
+      AFRAME.registerComponent("fit-to-video", {
+        schema: { src: { type: "selector" } },
         init: function () {
+          const v = this.data.src;
+          if (!v) return;
           const apply = () => {
-            const mesh = this.el.getObject3D("mesh");
-            if (!mesh || !mesh.material || mesh.material.map) return;
- 
-            const w = 512, h = 340, m = 60;
-            const c = document.createElement("canvas");
-            c.width = w; c.height = h;
-            const ctx = c.getContext("2d");
-            const canBlur = "filter" in ctx;
- 
-            if (canBlur) {
-              ctx.filter = "blur(26px)";
-              ctx.fillStyle = "#000";
-              if (ctx.roundRect) {
-                ctx.beginPath();
-                ctx.roundRect(m, m, w - m * 2, h - m * 2, 24);
-                ctx.fill();
-              } else {
-                ctx.fillRect(m, m, w - m * 2, h - m * 2);
-              }
-            } else {
-              // Fallback: lager på lager ger en mjuk kant utan ctx.filter
-              ctx.fillStyle = "rgba(0,0,0,0.09)";
-              for (let i = 0; i < 12; i++) {
-                const p = m - i * 4;
-                ctx.fillRect(p, p, w - p * 2, h - p * 2);
-              }
-            }
- 
-            mesh.material.map = new THREE.CanvasTexture(c);
-            mesh.material.transparent = true;
-            mesh.material.needsUpdate = true;
+            if (!v.videoWidth) return;
+            const w = parseFloat(this.el.getAttribute("width")) || 1;
+            this.el.setAttribute("height", w * (v.videoHeight / v.videoWidth));
           };
-          if (this.el.getObject3D("mesh")) apply();
-          this.el.addEventListener("loaded", apply);
+          if (v.readyState >= 1) apply();
+          v.addEventListener("loadedmetadata", apply);
         }
       });
  
@@ -319,24 +288,30 @@
  
         const targets = [
           { target: document.querySelector("#target1"), wrapper: document.querySelector("#wrap1"),
-            vid: document.querySelector("#vid1"), aVid: document.querySelector("#a-vid1"),
-            shadow: document.querySelector("#shadow1") },
+            vid: document.querySelector("#vid1"), aVid: document.querySelector("#a-vid1") },
           { target: document.querySelector("#target2"), wrapper: document.querySelector("#wrap2"),
-            vid: document.querySelector("#vid2"), aVid: document.querySelector("#a-vid2"),
-            shadow: document.querySelector("#shadow2") },
+            vid: document.querySelector("#vid2"), aVid: document.querySelector("#a-vid2") },
           { target: document.querySelector("#target3"), wrapper: document.querySelector("#wrap3"),
             vid: document.querySelector("#vid3"), aVid: document.querySelector("#a-vid3"),
-            shadow: document.querySelector("#shadow3"),
             faktaContainer: document.querySelector("#fakta-container"),
             faktaBg: document.querySelector("#fakta-bg"),
             faktaVidEl: document.querySelector("#a-fakta1"),
             faktaVidFile: document.querySelector("#vid-fakta1") }
         ];
  
+        /* --- Håll skärmen tänd medan man bläddrar i albumet --- */
+        let wakeLock = null;
+        const keepAwake = async () => {
+          try {
+            if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+          } catch (e) { /* stöds inte — ingen fara */ }
+        };
+ 
         startBtn.addEventListener("click", async () => {
           startBtn.disabled = true;
           startBtn.textContent = "Startar kameran…";
           targets.forEach((i) => (i.vid.muted = false));
+          keepAwake();
           try {
             await sceneEl.systems["mindar-image-system"].start();
           } catch (e) {
@@ -380,9 +355,6 @@
             item.aVid.removeAttribute("animation__fade");
             item.aVid.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 1; dur: 600; easing: easeOutQuad");
  
-            item.shadow.removeAttribute("animation__fade");
-            item.shadow.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 0.4; dur: 700; easing: easeOutQuad");
- 
             if (item.faktaContainer) {
               item.faktaVidFile.currentTime = 0;
               item.faktaVidFile.play().catch(() => {});
@@ -412,14 +384,11 @@
  
           item.aVid.removeAttribute("animation__fade");
           item.aVid.setAttribute("animation__fade", "property: material.opacity; to: 0; dur: 350; easing: easeInQuad");
-          item.shadow.removeAttribute("animation__fade");
-          item.shadow.setAttribute("animation__fade", "property: material.opacity; to: 0; dur: 300; easing: easeInQuad");
  
           item.timeout = setTimeout(() => {
             item.vid.pause();
             item.vid.volume = 0;
             item.aVid.setAttribute("material", "opacity", 0);
-            item.shadow.setAttribute("material", "opacity", 0);
             item.wrapper.setAttribute("scale", "1 1 1");
  
             if (item.faktaContainer) {
@@ -438,6 +407,24 @@
           item.target.addEventListener("targetFound", () => playVideo(item));
           item.target.addEventListener("targetLost", () => pauseVideo(item));
         });
+ 
+        /* --- Byter man flik eller låser telefonen ska inget ljud fortsätta --- */
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            targets.forEach((i) => {
+              i.vid.pause();
+              if (i.faktaVidFile) i.faktaVidFile.pause();
+            });
+          } else {
+            keepAwake();
+            targets.forEach((i) => {
+              if (i.target.object3D.visible) {
+                i.vid.play().catch(() => {});
+                if (i.faktaVidFile) i.faktaVidFile.play().catch(() => {});
+              }
+            });
+          }
+        });
       });
     </script>
   </head>
@@ -455,11 +442,6 @@
       <p>Rikta kameran mot ett foto</p>
     </div>
  
-    <!--
-      missTolerance höjd till 10: vid riktigt sneda vinklar tappar MindAR
-      enstaka bildrutor. Med högre tolerans försvinner inte videon bara för
-      att du lutar telefonen hårt.
-    -->
     <a-scene
       mindar-image="imageTargetSrc: target.mind; autoStart: no; filterMinCF: 0.001; filterBeta: 1000; missTolerance: 10; warmupTolerance: 5; uiLoading: no; uiScanning: no;"
       color-space="sRGB"
@@ -479,10 +461,8 @@
       <!-- Bild 1 -->
       <a-entity id="target1" mindar-image-target="targetIndex: 0" stabilizer>
         <a-entity id="wrap1">
-          <a-plane id="shadow1" width="1.25" height="0.83" position="0 -0.02 0"
-                   soft-shadow material="shader: flat; opacity: 0; transparent: true; depthWrite: false"></a-plane>
           <a-video id="a-vid1" src="#vid1" position="0 0 0.035" width="1" height="0.628"
-                   rounded-corners sharp-texture
+                   rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
       </a-entity>
@@ -490,10 +470,8 @@
       <!-- Bild 2 -->
       <a-entity id="target2" mindar-image-target="targetIndex: 1" stabilizer>
         <a-entity id="wrap2">
-          <a-plane id="shadow2" width="1.25" height="0.83" position="0 -0.02 0"
-                   soft-shadow material="shader: flat; opacity: 0; transparent: true; depthWrite: false"></a-plane>
           <a-video id="a-vid2" src="#vid2" position="0 0 0.035" width="1" height="0.628"
-                   rounded-corners sharp-texture
+                   rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
       </a-entity>
@@ -501,19 +479,20 @@
       <!-- Bild 3 (med faktaruta) -->
       <a-entity id="target3" mindar-image-target="targetIndex: 2" stabilizer>
         <a-entity id="wrap3">
-          <a-plane id="shadow3" width="1.25" height="0.83" position="0 -0.02 0"
-                   soft-shadow material="shader: flat; opacity: 0; transparent: true; depthWrite: false"></a-plane>
  
-          <!-- Faktarutan svävar strax ovanför sidan, bakom huvudvideon -->
+          <!-- Faktarutan har nu samma hörnradie som huvudvideon. Radien är
+               angiven i världsenheter, så hörnen blir fysiskt lika stora
+               trots att panelen är mycket smalare. -->
           <a-entity id="fakta-container" position="0 0 0.015">
             <a-plane id="fakta-bg" width="0.45" height="0.628" color="#000000"
+                     rounded-corners="radius: 0.035"
                      material="shader: flat; opacity: 0; transparent: true"></a-plane>
             <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0.005"
                      sharp-texture material="shader: flat; opacity: 0; transparent: true"></a-video>
           </a-entity>
  
           <a-video id="a-vid3" src="#vid3" position="0 0 0.035" width="1" height="0.628"
-                   rounded-corners sharp-texture
+                   rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
       </a-entity>
