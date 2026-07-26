@@ -288,6 +288,40 @@
         }
       });
  
+      /* =====================================================================
+         5b. BESKÄRNING — klipper bort inbrända svarta kanter i en video
+ 
+         Om din DaVinci-export har kortet centrerat i en bredare ram blir
+         resten svart, och den svärtan sitter i filen. Den här komponenten
+         visar bara en utvald del av bilden istället för hela rutan.
+         Värdena är andelar av bildrutan, räknat från övre vänstra hörnet:
+           x, y = var utsnittet börjar
+           w, h = hur stor del som ska visas
+         Exempel: ett kort som upptar mittersta 52 % av bredden i en
+         1920x1080-ram, i full höjd → crop-texture="x: 0.24; w: 0.52"
+      ===================================================================== */
+      AFRAME.registerComponent("crop-texture", {
+        schema: { x: { default: 0 }, y: { default: 0 }, w: { default: 1 }, h: { default: 1 } },
+        init: function () {
+          const apply = () => {
+            const mesh = this.el.getObject3D("mesh");
+            if (!mesh || !mesh.material || !mesh.material.map) return false;
+            const m = mesh.material.map;
+            m.repeat.set(this.data.w, this.data.h);
+            // three.js räknar UV nedifrån, därför speglas y
+            m.offset.set(this.data.x, 1 - this.data.y - this.data.h);
+            m.needsUpdate = true;
+            return true;
+          };
+          this.el.addEventListener("materialtextureloaded", apply);
+          this.checks = 0;
+          this.interval = setInterval(() => {
+            if (apply() || ++this.checks > 20) clearInterval(this.interval);
+          }, 400);
+        },
+        remove: function () { clearInterval(this.interval); }
+      });
+ 
       /* ===================== APP-LOGIK ===================== */
       document.addEventListener("DOMContentLoaded", function () {
         const sceneEl = document.querySelector("a-scene");
@@ -328,12 +362,24 @@
  
         allVideos.forEach((v) => {
           v.addEventListener("error", () => {
-            const codes = { 1: "avbruten", 2: "nätverksfel", 3: "avkodningsfel", 4: "HITTAS EJ / format stöds ej" };
-            const msg = v.getAttribute("src") + ": " + (v.error ? codes[v.error.code] || v.error.code : "okänt");
+            const code = v.error ? v.error.code : 0;
+            const codes = { 1: "avbruten", 2: "nätverksfel", 3: "AVKODNINGSFEL", 4: "HITTAS EJ / FORMAT STÖDS EJ" };
+            const msg = v.getAttribute("src") + ": " + (codes[code] || "okänt");
             logLine("FEL " + msg);
-            showToast("Videofilen kunde inte laddas — " + msg);
+            if (code === 3 || code === 4) {
+              showToast(v.getAttribute("src") + " kan inte spelas i den här webbläsaren. " +
+                        "Exportera om som H.264, 8-bitars, 4:2:0.");
+            } else {
+              showToast("Videofilen kunde inte laddas — " + msg);
+            }
           });
         });
+ 
+        if (DEBUG) {
+          const probe = document.createElement("video");
+          logLine("H.264 baseline: " + (probe.canPlayType('video/mp4; codecs="avc1.42E01E"') || "NEJ"));
+          logLine("H.264 high:     " + (probe.canPlayType('video/mp4; codecs="avc1.64001E"') || "NEJ"));
+        }
  
         if (DEBUG) {
           setInterval(() => {
@@ -357,6 +403,8 @@
            vilket förklarar varför det slutade fungera just när du la till
            albumet på hemskärmen.
         */
+        let pendingRetry = false;
+ 
         const fadeSoundIn = (v) => {
           clearInterval(v._fade);
           v.muted = false;
@@ -392,7 +440,18 @@
             }).catch((e) => {
               if (e.name === "AbortError") return;
               logLine("play() nekad " + v.id + ": " + e.name);
-              showToast("Videon kunde inte startas (" + e.name + "). Prova att öppna sidan i Safari istället för från hemskärmen.");
+              let hint;
+              if (e.name === "NotSupportedError") {
+                // Filen gick inte att läsa eller avkoda alls
+                hint = "filen kan inte avkodas här. Exportera om som H.264, 8-bitars, 4:2:0.";
+              } else if (e.name === "NotAllowedError") {
+                // Webbläsaren blockerade uppspelningen
+                hint = "webbläsaren blockerade uppspelningen. Tryck på skärmen och skanna igen.";
+                pendingRetry = true;
+              } else {
+                hint = "okänt fel.";
+              }
+              showToast(v.id + " – " + e.name + ": " + hint);
             });
           } else if (withSound) {
             fadeSoundIn(v);
@@ -457,6 +516,19 @@
  
           keepAwake();
           goFullscreen();
+ 
+          // Namnge direkt vilken fil som inte går att läsa, istället för att
+          // felet dyker upp först när man skannar
+          setTimeout(() => {
+            const trasiga = allVideos.filter(
+              (v) => v.error || v.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
+            );
+            if (trasiga.length) {
+              showToast("Dessa filer kan inte läsas i den här webbläsaren: " +
+                        trasiga.map((v) => v.getAttribute("src")).join(", ") +
+                        ". Exportera om som H.264, 8-bitars, 4:2:0.");
+            }
+          }, 2500);
  
           try {
             await sceneEl.systems["mindar-image-system"].start();
@@ -572,6 +644,18 @@
           item.target.addEventListener("targetLost", () => pauseVideo(item));
         });
  
+        // Blockerades uppspelningen räcker det att trycka på skärmen
+        window.addEventListener("pointerdown", () => {
+          if (!pendingRetry) return;
+          pendingRetry = false;
+          targets.forEach((i) => {
+            if (i.active) {
+              startMedia(i.vid, true);
+              startMedia(i.faktaVidFile, false);
+            }
+          });
+        });
+ 
         document.addEventListener("visibilitychange", () => {
           if (document.hidden) {
             allVideos.forEach((v) => v.pause());
@@ -645,8 +729,12 @@
             <a-plane id="fakta-rim" width="0.458" height="0.636" position="0 0 -0.002"
                      rounded-corners="radius: 0.039"
                      material="shader: flat; color: #C9BEA8; opacity: 0; transparent: true"></a-plane>
+            <!-- Har din DaVinci-fil svarta kanter runt kortet: ställ in
+                 utsnittet här, t.ex. crop-texture="x: 0.24; w: 0.52"
+                 Standardvärdena nedan visar hela bildrutan oförändrad. -->
             <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0"
                      rounded-corners="radius: 0.035" sharp-texture
+                     crop-texture="x: 0; y: 0; w: 1; h: 1"
                      material="shader: flat; opacity: 0; transparent: true"></a-video>
           </a-entity>
  
