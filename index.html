@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="sv">
   <head>
     <meta charset="utf-8" />
@@ -7,102 +7,279 @@
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
  
-    <style>
-      html, body { margin: 0; overflow: hidden; }
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
  
-      #loading-overlay {
+    <style>
+      html, body { margin: 0; overflow: hidden; background: #0a0a0a; }
+ 
+      /* ============ STARTSKÄRM ============ */
+      #start-screen {
         position: fixed;
         inset: 0;
-        background: #050505;
-        color: #ffffff;
+        background: radial-gradient(circle at 50% 35%, #1a1815 0%, #0a0a0a 70%);
         display: flex;
         flex-direction: column;
-        gap: 18px;
         justify-content: center;
         align-items: center;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        z-index: 9999;
+        gap: 14px;
+        z-index: 10000;
         transition: opacity 0.8s ease;
+        font-family: "Inter", -apple-system, sans-serif;
+        text-align: center;
+        padding: 0 30px;
       }
-      #loading-overlay p {
-        font-size: 13px;
-        letter-spacing: 3px;
+      #start-screen.hidden { opacity: 0; pointer-events: none; }
+ 
+      #start-screen .eyebrow {
+        font-size: 11px;
+        letter-spacing: 4px;
         text-transform: uppercase;
-        color: #aaaaaa;
+        color: rgba(255, 255, 255, 0.45);
         margin: 0;
       }
-      .spinner {
+      #start-screen h1 {
+        font-family: "Cormorant Garamond", serif;
+        font-weight: 600;
+        font-size: 42px;
+        color: #f2ede4;
+        margin: 0;
+        line-height: 1.1;
+      }
+      #start-screen .sub {
+        font-size: 14px;
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.55);
+        max-width: 300px;
+        margin: 4px 0 24px;
+      }
+      #start-btn {
+        font-family: "Inter", sans-serif;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 2.5px;
+        text-transform: uppercase;
+        color: #0a0a0a;
+        background: #f2ede4;
+        border: none;
+        border-radius: 999px;
+        padding: 16px 42px;
+        cursor: pointer;
+        transition: transform 0.25s ease, opacity 0.25s ease;
+      }
+      #start-btn:active { transform: scale(0.96); }
+      #start-btn:disabled { opacity: 0.5; }
+      #start-error {
+        font-size: 13px;
+        color: #e08a8a;
+        margin-top: 16px;
+        display: none;
+      }
+ 
+      /* ============ SKANNINGS-UI ============ */
+      #scan-ui {
+        position: fixed;
+        inset: 0;
+        z-index: 9000;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+      }
+      #scan-ui.visible { opacity: 1; }
+ 
+      .scan-frame {
+        position: relative;
+        width: min(62vw, 300px);
+        aspect-ratio: 1 / 0.75;
+        animation: framePulse 2.4s ease-in-out infinite;
+      }
+      .scan-frame span {
+        position: absolute;
         width: 26px;
         height: 26px;
-        border: 2px solid rgba(255,255,255,0.15);
-        border-top-color: #ffffff;
-        border-radius: 50%;
-        animation: spin 0.9s linear infinite;
+        border: 2px solid rgba(255, 255, 255, 0.9);
       }
-      @keyframes spin { to { transform: rotate(360deg); } }
+      .scan-frame span:nth-child(1) { top: 0; left: 0; border-right: none; border-bottom: none; border-top-left-radius: 10px; }
+      .scan-frame span:nth-child(2) { top: 0; right: 0; border-left: none; border-bottom: none; border-top-right-radius: 10px; }
+      .scan-frame span:nth-child(3) { bottom: 0; left: 0; border-right: none; border-top: none; border-bottom-left-radius: 10px; }
+      .scan-frame span:nth-child(4) { bottom: 0; right: 0; border-left: none; border-top: none; border-bottom-right-radius: 10px; }
+      @keyframes framePulse {
+        0%, 100% { transform: scale(1); opacity: 0.9; }
+        50% { transform: scale(1.03); opacity: 0.55; }
+      }
  
-      /* Diskret hjälptext som visas tills första bilden hittas */
-      #scan-hint {
-        position: fixed;
-        bottom: 40px;
-        left: 50%;
-        transform: translateX(-50%);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      #scan-ui p {
+        font-family: "Inter", sans-serif;
         font-size: 12px;
-        letter-spacing: 2px;
+        letter-spacing: 2.5px;
         text-transform: uppercase;
-        color: rgba(255,255,255,0.85);
-        background: rgba(0,0,0,0.45);
-        padding: 10px 18px;
+        color: rgba(255, 255, 255, 0.85);
+        background: rgba(0, 0, 0, 0.45);
+        padding: 10px 20px;
         border-radius: 999px;
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-        z-index: 9000;
-        transition: opacity 0.6s ease;
-        pointer-events: none;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        margin-top: 34px;
         white-space: nowrap;
       }
-      #scan-hint.hidden { opacity: 0; }
  
-      /* Ljud-hint som försvinner efter första klicket */
-      #sound-hint {
-        position: fixed;
-        top: 30px;
-        left: 50%;
-        transform: translateX(-50%);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        font-size: 11px;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: rgba(255,255,255,0.7);
-        z-index: 9000;
-        transition: opacity 0.6s ease;
-        pointer-events: none;
+      @media (prefers-reduced-motion: reduce) {
+        .scan-frame { animation: none; }
       }
-      #sound-hint.hidden { opacity: 0; }
     </style>
  
     <script>
+      /* =====================================================================
+         STABILISERING — det viktigaste mot skakighet.
+         MindAR:s råa tracking uppdaterar positionen hackigt. Den här
+         komponenten jämnar ut position, rotation och skala varje frame med
+         exponentiell utjämning (samma teknik som professionella AR-appar).
+         "tau" = utjämningstid i sekunder:
+           0.05 = snabb men lite skakigare
+           0.10 = bra balans (standard här)
+           0.20 = väldigt stilla men släpar efter mer
+      ===================================================================== */
+      AFRAME.registerComponent("stabilizer", {
+        schema: { tau: { default: 0.1 } },
+        init: function () {
+          this.sPos = new THREE.Vector3();
+          this.sQuat = new THREE.Quaternion();
+          this.sScale = new THREE.Vector3(1, 1, 1);
+          this.tPos = new THREE.Vector3();
+          this.tQuat = new THREE.Quaternion();
+          this.tScale = new THREE.Vector3(1, 1, 1);
+          this.snap = true;
+          // Hoppa direkt till rätt läge när bilden hittas (ingen "glidstart")
+          this.el.addEventListener("targetFound", () => (this.snap = true));
+        },
+        tick: function (time, dt) {
+          const o = this.el.object3D;
+          if (!o.visible) return;
+ 
+          o.matrix.decompose(this.tPos, this.tQuat, this.tScale);
+ 
+          if (this.snap) {
+            this.sPos.copy(this.tPos);
+            this.sQuat.copy(this.tQuat);
+            this.sScale.copy(this.tScale);
+            this.snap = false;
+          } else {
+            // dt-baserad faktor => samma känsla oavsett skärmens fps
+            const a = 1 - Math.exp(-(dt / 1000) / this.data.tau);
+            this.sPos.lerp(this.tPos, a);
+            this.sQuat.slerp(this.tQuat, a);
+            this.sScale.lerp(this.tScale, a);
+          }
+          o.matrix.compose(this.sPos, this.sQuat, this.sScale);
+        },
+      });
+ 
+      /* =====================================================================
+         RUNDADE HÖRN — lägger en alfamask (rundad rektangel) på videon
+         så den får mjuka hörn som en modern app, utan att röra videofilen.
+      ===================================================================== */
+      AFRAME.registerComponent("rounded-corners", {
+        schema: { radius: { default: 0.045 } }, // andel av bredden
+        init: function () {
+          const apply = () => {
+            const mesh = this.el.getObject3D("mesh");
+            if (!mesh || !mesh.material) return;
+ 
+            const w = 1024, h = 643; // matchar 1 : 0.628
+            const r = this.data.radius * w;
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#fff";
+            ctx.beginPath();
+            ctx.moveTo(r, 0);
+            ctx.arcTo(w, 0, w, h, r);
+            ctx.arcTo(w, h, 0, h, r);
+            ctx.arcTo(0, h, 0, 0, r);
+            ctx.arcTo(0, 0, w, 0, r);
+            ctx.closePath();
+            ctx.fill();
+ 
+            const tex = new THREE.CanvasTexture(canvas);
+            mesh.material.alphaMap = tex;
+            mesh.material.transparent = true;
+            mesh.material.needsUpdate = true;
+          };
+          if (this.el.getObject3D("mesh")) apply();
+          this.el.addEventListener("loaded", apply);
+          this.el.addEventListener("materialtextureloaded", apply);
+        },
+      });
+ 
+      /* =====================================================================
+         MJUK SKUGGA — ritar en suddig mörk platta bakom videon så att den
+         ser ut att sväva en aning över fotot.
+      ===================================================================== */
+      AFRAME.registerComponent("soft-shadow", {
+        init: function () {
+          const apply = () => {
+            const mesh = this.el.getObject3D("mesh");
+            if (!mesh || !mesh.material) return;
+ 
+            const w = 512, h = 340;
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.filter = "blur(26px)";
+            ctx.fillStyle = "#000";
+            const m = 60; // marginal så blur:en får plats
+            ctx.beginPath();
+            ctx.roundRect
+              ? ctx.roundRect(m, m, w - m * 2, h - m * 2, 24)
+              : ctx.rect(m, m, w - m * 2, h - m * 2);
+            ctx.fill();
+ 
+            const tex = new THREE.CanvasTexture(canvas);
+            mesh.material.map = tex;
+            mesh.material.transparent = true;
+            mesh.material.needsUpdate = true;
+          };
+          if (this.el.getObject3D("mesh")) apply();
+          this.el.addEventListener("loaded", apply);
+        },
+      });
+ 
+      /* ===================== APP-LOGIK ===================== */
       document.addEventListener("DOMContentLoaded", function () {
         const sceneEl = document.querySelector("a-scene");
-        const overlay = document.querySelector("#loading-overlay");
-        const scanHint = document.querySelector("#scan-hint");
-        const soundHint = document.querySelector("#sound-hint");
- 
-        sceneEl.addEventListener("renderstart", () => {
-          setTimeout(() => {
-            overlay.style.opacity = "0";
-            setTimeout(() => (overlay.style.display = "none"), 800);
-          }, 600);
-        });
+        const startScreen = document.querySelector("#start-screen");
+        const startBtn = document.querySelector("#start-btn");
+        const startError = document.querySelector("#start-error");
+        const scanUi = document.querySelector("#scan-ui");
  
         const targets = [
-          { target: document.querySelector("#target1"), vid: document.querySelector("#vid1"), aVid: document.querySelector("#a-vid1") },
-          { target: document.querySelector("#target2"), vid: document.querySelector("#vid2"), aVid: document.querySelector("#a-vid2") },
+          {
+            target: document.querySelector("#target1"),
+            wrapper: document.querySelector("#wrap1"),
+            vid: document.querySelector("#vid1"),
+            aVid: document.querySelector("#a-vid1"),
+            shadow: document.querySelector("#shadow1"),
+          },
+          {
+            target: document.querySelector("#target2"),
+            wrapper: document.querySelector("#wrap2"),
+            vid: document.querySelector("#vid2"),
+            aVid: document.querySelector("#a-vid2"),
+            shadow: document.querySelector("#shadow2"),
+          },
           {
             target: document.querySelector("#target3"),
+            wrapper: document.querySelector("#wrap3"),
             vid: document.querySelector("#vid3"),
             aVid: document.querySelector("#a-vid3"),
+            shadow: document.querySelector("#shadow3"),
             faktaContainer: document.querySelector("#fakta-container"),
             faktaBg: document.querySelector("#fakta-bg"),
             faktaVidEl: document.querySelector("#a-fakta1"),
@@ -110,34 +287,76 @@
           },
         ];
  
+        /* --- Start: kamera + ljud låses upp av samma knapptryck --- */
+        startBtn.addEventListener("click", async () => {
+          startBtn.disabled = true;
+          startBtn.textContent = "Startar kameran…";
+          targets.forEach((item) => (item.vid.muted = false));
+ 
+          try {
+            await sceneEl.systems["mindar-image-system"].start();
+          } catch (e) {
+            startBtn.disabled = false;
+            startBtn.textContent = "Försök igen";
+            startError.style.display = "block";
+          }
+        });
+ 
+        sceneEl.addEventListener("arReady", () => {
+          startScreen.classList.add("hidden");
+          scanUi.classList.add("visible");
+        });
+        sceneEl.addEventListener("arError", () => {
+          startBtn.disabled = false;
+          startBtn.textContent = "Försök igen";
+          startError.style.display = "block";
+        });
+ 
+        /* --- Visa/dölj skanningsramen beroende på om något foto är aktivt --- */
+        let activeCount = 0;
+        let scanTimer = null;
+        const updateScanUi = () => {
+          clearTimeout(scanTimer);
+          if (activeCount > 0) {
+            scanUi.classList.remove("visible");
+          } else {
+            // Liten fördröjning så ramen inte blinkar vid korta tracking-tapp
+            scanTimer = setTimeout(() => scanUi.classList.add("visible"), 1200);
+          }
+        };
+ 
+        /* --- Uppspelning --- */
         const playVideo = (item) => {
-          // VIKTIG FIX: avbryt en pågående "pausa snart"-timer.
-          // Utan detta gömdes videon om bilden tappades och hittades igen inom 500 ms.
           clearTimeout(item.timeout);
           clearInterval(item.fadeInterval);
+          activeCount++;
+          updateScanUi();
  
           if (item.vid.paused) {
             item.vid.currentTime = 0;
             item.vid.volume = 0;
             item.vid.play().catch(() => {});
  
-            // Mjuk fade + liten "väx fram"-skala ger en mer levande start
+            // Hela innehållet (video + skugga) växer fram tillsammans
+            item.wrapper.removeAttribute("animation__scale");
+            item.wrapper.setAttribute("animation__scale", "property: scale; from: 0.93 0.93 0.93; to: 1 1 1; dur: 650; easing: easeOutQuint");
+ 
             item.aVid.removeAttribute("animation__fade");
-            item.aVid.removeAttribute("animation__scale");
             item.aVid.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 1; dur: 600; easing: easeOutQuad");
-            item.aVid.setAttribute("animation__scale", "property: scale; from: 0.94 0.94 0.94; to: 1 1 1; dur: 600; easing: easeOutQuint");
+ 
+            item.shadow.removeAttribute("animation__fade");
+            item.shadow.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 0.4; dur: 700; easing: easeOutQuad");
  
             if (item.faktaContainer) {
               item.faktaVidFile.currentTime = 0;
               item.faktaVidFile.play().catch(() => {});
  
-              item.faktaBg.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 0.6; dur: 800; delay: 250; easing: easeOutQuad");
-              item.faktaVidEl.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 1; dur: 800; delay: 250; easing: easeOutQuad");
-              // Faktarutan glider ut åt sidan, med liten fördröjning så huvudvideon hinner landa först
-              item.faktaContainer.setAttribute("animation__slide", "property: position; from: 0 0 -0.05; to: 0.75 0 -0.05; dur: 800; delay: 250; easing: easeOutQuint");
+              item.faktaBg.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 0.6; dur: 800; delay: 300; easing: easeOutQuad");
+              item.faktaVidEl.setAttribute("animation__fade", "property: material.opacity; from: 0; to: 1; dur: 800; delay: 300; easing: easeOutQuad");
+              item.faktaContainer.setAttribute("animation__slide", "property: position; from: 0 0 -0.05; to: 0.75 0 -0.05; dur: 800; delay: 300; easing: easeOutQuint");
             }
  
-            // Volym-fade in
+            // Ljud-fade in
             item.vol = 0;
             item.fadeInterval = setInterval(() => {
               item.vol += 0.05;
@@ -149,29 +368,30 @@
               }
             }, 25);
           }
- 
-          // Göm skanningshjälpen när första bilden hittats
-          scanHint.classList.add("hidden");
         };
  
         const pauseVideo = (item) => {
           clearInterval(item.fadeInterval);
+          activeCount = Math.max(0, activeCount - 1);
+          updateScanUi();
  
-          // Snabb volym-fade ut så ljudet inte klipps abrupt
+          // Ljud-fade ut
           item.fadeInterval = setInterval(() => {
             item.vid.volume = Math.max(0, item.vid.volume - 0.1);
             if (item.vid.volume <= 0) clearInterval(item.fadeInterval);
           }, 25);
  
-          // Mjuk fade ut istället för att bara försvinna
           item.aVid.removeAttribute("animation__fade");
           item.aVid.setAttribute("animation__fade", "property: material.opacity; to: 0; dur: 350; easing: easeInQuad");
+          item.shadow.removeAttribute("animation__fade");
+          item.shadow.setAttribute("animation__fade", "property: material.opacity; to: 0; dur: 300; easing: easeInQuad");
  
           item.timeout = setTimeout(() => {
             item.vid.pause();
             item.vid.volume = 0;
             item.aVid.setAttribute("material", "opacity", 0);
-            item.aVid.setAttribute("scale", "1 1 1");
+            item.shadow.setAttribute("material", "opacity", 0);
+            item.wrapper.setAttribute("scale", "1 1 1");
  
             if (item.faktaContainer) {
               item.faktaVidFile.pause();
@@ -189,48 +409,40 @@
           item.target.addEventListener("targetFound", () => playVideo(item));
           item.target.addEventListener("targetLost", () => pauseVideo(item));
         });
- 
-        // Första klicket låser upp ljudet (krav i mobilwebbläsare)
-        window.addEventListener(
-          "click",
-          () => {
-            targets.forEach((item) => (item.vid.muted = false));
-            soundHint.classList.add("hidden");
-          },
-          { once: true }
-        );
       });
     </script>
   </head>
   <body>
-    <div id="loading-overlay">
-      <div class="spinner"></div>
-      <p>Startar kameran...</p>
+    <!-- ============ STARTSKÄRM ============ -->
+    <div id="start-screen">
+      <p class="eyebrow">Augmented Reality</p>
+      <h1>Fotoalbumet</h1>
+      <p class="sub">Rikta kameran mot ett foto i albumet så vaknar det till liv.</p>
+      <button id="start-btn">Öppna albumet</button>
+      <p id="start-error">Kameran kunde inte startas. Kontrollera att sidan har kameratillstånd.</p>
     </div>
  
-    <div id="scan-hint">Rikta kameran mot ett foto</div>
-    <div id="sound-hint">Tryck på skärmen för ljud</div>
+    <!-- ============ SKANNINGSRAM ============ -->
+    <div id="scan-ui">
+      <div class="scan-frame"><span></span><span></span><span></span><span></span></div>
+      <p>Rikta kameran mot ett foto</p>
+    </div>
  
     <!--
-      Tracking-inställningar:
-      - filterBeta höjd från 0.01 till 10: din gamla inställning gav extremt mjuk
-        men "flytande" video som släpade efter när du rörde telefonen. 10 ger en
-        bra balans mellan stabilitet och respons. Testa 1–100 efter smak
-        (lägre = mjukare/segare, högre = snabbare/skakigare).
-      - missTolerance/warmupTolerance minskar blinkande när trackingen
-        tillfälligt tappar bilden i en enstaka frame.
-      - antialias: true ger skarpare kanter på videoplanen.
+      autoStart: no  => kameran startar först när användaren trycker på knappen
+                        (proffsigare, och samma tryck låser upp ljudet).
+      filterBeta: 1000 => MindAR:s egen (sega) filtrering avstängd i praktiken;
+                          all utjämning sköts istället av "stabilizer"-komponenten
+                          som är mjuk UTAN att släpa efter.
     -->
     <a-scene
-      mindar-image="imageTargetSrc: target.mind; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 5; warmupTolerance: 5; uiLoading: no; uiScanning: no;"
+      mindar-image="imageTargetSrc: target.mind; autoStart: no; filterMinCF: 0.001; filterBeta: 1000; missTolerance: 5; warmupTolerance: 5; uiLoading: no; uiScanning: no;"
       color-space="sRGB"
       renderer="colorManagement: true; physicallyCorrectLights: true; antialias: true; alpha: true"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
     >
       <a-assets>
-        <!-- preload="auto" gör att videon kan starta direkt utan svart blixt
-             första gången ett foto skannas -->
         <video id="vid1" src="video1.mp4" preload="auto" loop muted playsinline crossorigin="anonymous"></video>
         <video id="vid2" src="video2.mp4" preload="auto" loop muted playsinline crossorigin="anonymous"></video>
         <video id="vid3" src="video3.mp4" preload="auto" loop muted playsinline crossorigin="anonymous"></video>
@@ -240,32 +452,42 @@
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
  
       <!-- Bild 1 -->
-      <a-entity id="target1" mindar-image-target="targetIndex: 0">
-        <a-video id="a-vid1" src="#vid1" position="0 0 0" width="1" height="0.628"
-                 material="shader: flat; opacity: 0; transparent: true"></a-video>
+      <a-entity id="target1" mindar-image-target="targetIndex: 0" stabilizer="tau: 0.1">
+        <a-entity id="wrap1">
+          <a-plane id="shadow1" width="1.25" height="0.83" position="0 -0.015 -0.02"
+                   soft-shadow material="shader: flat; opacity: 0; transparent: true; depthWrite: false"></a-plane>
+          <a-video id="a-vid1" src="#vid1" position="0 0 0" width="1" height="0.628"
+                   rounded-corners material="shader: flat; opacity: 0; transparent: true"></a-video>
+        </a-entity>
       </a-entity>
  
       <!-- Bild 2 -->
-      <a-entity id="target2" mindar-image-target="targetIndex: 1">
-        <a-video id="a-vid2" src="#vid2" position="0 0 0" width="1" height="0.628"
-                 material="shader: flat; opacity: 0; transparent: true"></a-video>
+      <a-entity id="target2" mindar-image-target="targetIndex: 1" stabilizer="tau: 0.1">
+        <a-entity id="wrap2">
+          <a-plane id="shadow2" width="1.25" height="0.83" position="0 -0.015 -0.02"
+                   soft-shadow material="shader: flat; opacity: 0; transparent: true; depthWrite: false"></a-plane>
+          <a-video id="a-vid2" src="#vid2" position="0 0 0" width="1" height="0.628"
+                   rounded-corners material="shader: flat; opacity: 0; transparent: true"></a-video>
+        </a-entity>
       </a-entity>
  
-      <!-- Bild 3 -->
-      <a-entity id="target3" mindar-image-target="targetIndex: 2">
+      <!-- Bild 3 (med faktaruta) -->
+      <a-entity id="target3" mindar-image-target="targetIndex: 2" stabilizer="tau: 0.1">
+        <a-entity id="wrap3">
+          <a-plane id="shadow3" width="1.25" height="0.83" position="0 -0.015 -0.06"
+                   soft-shadow material="shader: flat; opacity: 0; transparent: true; depthWrite: false"></a-plane>
  
-        <!-- Faktarutan ligger bakom huvudvideon (-0.05) och glider ut åt sidan -->
-        <a-entity id="fakta-container" position="0 0 -0.05">
-          <a-plane id="fakta-bg" width="0.45" height="0.628" color="#000000"
-                   material="shader: flat; opacity: 0; transparent: true"></a-plane>
-          <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0.01"
-                   material="shader: flat; opacity: 0; transparent: true"></a-video>
+          <!-- Faktarutan bakom huvudvideon, glider ut åt sidan -->
+          <a-entity id="fakta-container" position="0 0 -0.05">
+            <a-plane id="fakta-bg" width="0.45" height="0.628" color="#000000"
+                     material="shader: flat; opacity: 0; transparent: true"></a-plane>
+            <a-video id="a-fakta1" src="#vid-fakta1" width="0.45" height="0.628" position="0 0 0.01"
+                     material="shader: flat; opacity: 0; transparent: true"></a-video>
+          </a-entity>
+ 
+          <a-video id="a-vid3" src="#vid3" position="0 0 0.01" width="1" height="0.628"
+                   rounded-corners material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
- 
-        <!-- Huvudvideon lite längre fram (0.01) -->
-        <a-video id="a-vid3" src="#vid3" position="0 0 0.01" width="1" height="0.628"
-                 material="shader: flat; opacity: 0; transparent: true"></a-video>
- 
       </a-entity>
     </a-scene>
   </body>
