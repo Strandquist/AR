@@ -323,7 +323,8 @@
           { t: 2 },
           { t: 3, f: 1 },
           { t: 4, f: 2 },
-          { t: 5, f: 3 }
+          { t: 5, f: 3 },
+          { t: 6, f: 4 }
         ];
  
         const DEBUG = new URLSearchParams(location.search).has("debug");
@@ -696,11 +697,13 @@
         <video id="vid3" src="video3.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
         <video id="vid4" src="video4.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
         <video id="vid5" src="video5.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+        <video id="vid6" src="video6.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
  
         <!-- Faktakorten. Ta bort loop om animationen ska spelas en gång. -->
         <video id="vid-fakta1" src="fakta1.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
         <video id="vid-fakta2" src="fakta2.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
         <video id="vid-fakta3" src="fakta3.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
+        <video id="vid-fakta4" src="fakta4.mp4" preload="auto" loop muted playsinline webkit-playsinline crossorigin="anonymous"></video>
       </a-assets>
  
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
@@ -788,6 +791,27 @@
           </a-entity>
  
           <a-video id="a-vid5" src="#vid5" position="0 0 0.04" width="1" height="0.628"
+                   rounded-corners="radius: 0.035" sharp-texture
+                   material="shader: flat; opacity: 0; transparent: true"></a-video>
+        </a-entity>
+      </a-entity>
+ 
+      <!-- Foto 6, med faktakort 4 -->
+      <a-entity id="target6" mindar-image-target="targetIndex: 5" stabilizer>
+        <a-entity id="wrap6">
+          <a-entity id="fakta-container4" position="0 0 0.02">
+            <a-plane id="fakta-shadow4" width="0.38" height="0.72" position="0.012 -0.016 -0.004"
+                     soft-shadow rounded-corners="radius: 0.06"
+                     material="shader: flat; color: #FFFFFF; opacity: 0; transparent: true; depthWrite: false"></a-plane>
+            <a-plane id="fakta-rim4" width="0.308" height="0.636" position="0 0 -0.002"
+                     rounded-corners="radius: 0.039"
+                     material="shader: flat; color: #C9BEA8; opacity: 0; transparent: true"></a-plane>
+            <a-video id="a-fakta4" src="#vid-fakta4" width="0.30" height="0.628" position="0 0 0"
+                     rounded-corners="radius: 0.035" sharp-texture
+                     material="shader: flat; opacity: 0; transparent: true"></a-video>
+          </a-entity>
+ 
+          <a-video id="a-vid6" src="#vid6" position="0 0 0.04" width="1" height="0.628"
                    rounded-corners="radius: 0.035" sharp-texture
                    material="shader: flat; opacity: 0; transparent: true"></a-video>
         </a-entity>
